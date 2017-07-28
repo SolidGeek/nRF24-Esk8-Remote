@@ -7,83 +7,144 @@
 
 U8G2_SSD1306_128X32_UNIVISION_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
-RF24 radio(7, 8);
-const uint64_t pipe = 0xE8E8F0F0E1LL;
-
-int motorSpeed = 0;
-int statusLedPin = 5;
-int killSwitchPin = 3;
-int hallSensorPin = A7;
+// Pin defination
+const int powerLedPin = 6;
+const int statusLedPin = 5;
+const int triggerPin = 4;
+const int batteryVoltagePin = 3;
+const int batteryMeasurePin = A2;
+const int hallSensorPin = A3;
 
 unsigned int statusBlinkOff = 100;
 unsigned int statusBlinkOn = 100;
 bool statusBlinkState = LOW;
 unsigned long lastStatusBlink = 0;
+const float refVolt = 5.0;
+float batteryVoltage = 0.0;
 
-int hallCenter = 575;
-int hallTop = 950;
-int hallBottom = 150;
-int hallCenterMargin = 5;
-int hallMeasurement, hallSpeed, hallOffset;
+// Defining variables for Hall Effect throttle.
+int hallCenter, hallTop, hallBottom, hallMeasurement, hallSpeed, hallOffset;
+int hallCenterMargin = 4;
 
-
+// Defining variables for NRF24 communication
 bool sendSuccess = false;
 bool returnSuccess = false;
 bool connected = false;
+byte gotByte = 0;
 int failedCounter;
-byte gotByte;
+const uint64_t pipe = 0xE8E8F0F0E1LL;
 
+// Instantiating RF24 object for NRF24 communication
+RF24 radio(9, 10);
 
 void setup() {
-  // Serial.begin(9600);
+  Serial.begin(9600);
   u8g2.begin();
 
   pinMode(statusLedPin, OUTPUT);
-  pinMode(killSwitchPin, INPUT_PULLUP);
+  pinMode(triggerPin, INPUT_PULLUP);
   pinMode(hallSensorPin, INPUT);
+  pinMode(powerLedPin, OUTPUT);
+  pinMode(batteryVoltagePin, OUTPUT);
+  pinMode(batteryMeasurePin, INPUT);
+  digitalWrite(batteryVoltagePin, LOW);
 
+  // Turn on the powerLED.
+  digitalWrite(powerLedPin, HIGH);
 
+  // Start radio communication at MAX POWER!!!
   radio.begin();
   radio.setPALevel(RF24_PA_MAX);
   radio.enableAckPayload();
   radio.enableDynamicPayloads();
   radio.openWritingPipe(pipe);
+  
+  // Find median of Hall Sensor in middle position
+  calibrateHallSensor();
 
-  // radio.printDetails();
-
-  statusBlink(1); // Connecting
+  // Set the statusLED to blink
+  statusBlink(1);
 }
 
 char lcdBuffer[20];
 String lcdString;
 
 void loop() {
-  
-  if(digitalRead(killSwitchPin) == LOW){
+
+  if(triggerActive())
+  {
     getHallSpeed();
-  }else{
+  }
+  else
+  {
     hallSpeed = 127;  
   }
-  
-  lcdString = "Speed: " + (String)hallSpeed;
-  lcdString.toCharArray(lcdBuffer, 20);
 
-  u8g2.firstPage();
-  do {
-    u8g2.setFont(u8g2_font_ncenB14_tr);
-    u8g2.drawStr(10, 24, lcdBuffer);
-  } while ( u8g2.nextPage() );
+  // Call function to check remote battery voltage
+  checkBatteryVoltage();
+  Serial.println(batteryVoltage);
 
-  
+  // Call function to update display and LED
+  updateDisplay();
+
+  // Transmit to receiver
   transmitToVesc();
- 
-  
+}
+
+void updateDisplay(){
+
   if (connected == true) {
     statusBlink(2);
   } else {
     statusBlink(1);
   }
+  
+  lcdString = "V: " + (String)batteryVoltage;
+  lcdString.toCharArray(lcdBuffer, 20);
 
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_gb24st_t_1);
+    u8g2.drawStr(10, 20, lcdBuffer);
+  } while ( u8g2.nextPage() );
+
+}
+
+boolean triggerActive(){
+  if(digitalRead(triggerPin) == LOW)
+    return true;
+  else
+    return false;
+}
+
+void checkBatteryVoltage(){
+  digitalWrite(batteryVoltagePin, HIGH);
+  int total = 0;
+  
+  for(int i = 0; i < 10; i++){
+      total += analogRead(batteryMeasurePin);
+      delay(150);
+      Serial.println(analogRead(batteryMeasurePin));
+  }
+
+  batteryVoltage = (5.02 / 1024.0) * ((float)total / 10.0);
+
+  delay(2000);
+  
+  digitalWrite(batteryVoltagePin, LOW);
+}
+
+void calibrateHallSensor(){
+  int total = 0;
+  
+  for(int i = 0; i < 10; i++){
+      total += analogRead(hallSensorPin);
+      delay(50);
+  }
+
+  hallCenter = total / 10;
+  hallTop = hallCenter + 300;
+  hallBottom = hallCenter - 300;
 }
 
 void transmitToVesc() {
@@ -139,7 +200,6 @@ void getHallSpeed() {
   }
 }
 
-
 void statusBlink(int state) {
   switch (state) {
     case 0:
@@ -171,6 +231,6 @@ void statusBlink(int state) {
     if(statusBlinkOff == 0){
     statusBlinkState = HIGH;
   }
-
   digitalWrite(statusLedPin, statusBlinkState);
 }
+
