@@ -7,12 +7,10 @@ U8G2_SSD1306_128X32_UNIVISION_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 static unsigned char u8g_logo_bits[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7e, 0x00, 0x80, 0x3c, 0x01, 0xe0, 0x00, 0x07, 0x70, 0x18, 0x0e, 0x30, 0x18, 0x0c, 0x98, 0x99, 0x19, 0x80, 0xff, 0x01, 0x04, 0xc3, 0x20, 0x0c, 0x99, 0x30, 0xec, 0xa5, 0x37, 0xec, 0xa5, 0x37, 0x0c, 0x99, 0x30, 0x04, 0xc3, 0x20, 0x80, 0xff, 0x01, 0x98, 0x99, 0x19, 0x30, 0x18, 0x0c, 0x70, 0x18, 0x0e, 0xe0, 0x00, 0x07, 0x80, 0x3c, 0x01, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-
 // Pin defination
 const int powerLedPin = 6;
 const int statusLedPin = 5;
 const int triggerPin = 4;
-const int batteryVoltagePin = 3;
 const int batteryMeasurePin = A2;
 const int hallSensorPin = A3;
 
@@ -34,15 +32,15 @@ int hallCenterMargin = 4;
 bool connected = false;
 byte gotByte = 0;
 int failCount;
-unsigned long lastTransmission;
 const uint64_t pipe = 0xE8E8F0F0E1LL;
+unsigned long lastTransmission;
 
 // Defining variables for OLED display
 char displayBuffer[20];
 String displayString;
 
 // Instantiating RF24 object for NRF24 communication
-RF24 radio(10, 9);
+RF24 radio(7, 8);
 
 void setup() {
   pinMode(statusLedPin, OUTPUT);
@@ -55,26 +53,16 @@ void setup() {
 
   u8g2.begin();
 
-  u8g2.firstPage();
-  do {
-
-    u8g2.drawXBM( 4, 4, 24, 24, u8g_logo_bits);
-    
-    displayString = "Esk8 remote";
-    displayString.toCharArray(displayBuffer, 12);
-  
-    u8g2.setFont(u8g2_font_helvR10_tf  );
-    u8g2.drawStr(34, 22, displayBuffer);   
-  } while ( u8g2.nextPage() );
-
-  delay(1500);
+  drawStartScreen();
   
   // Start radio communication at MAX POWER!!!
   radio.begin();
-  radio.setPALevel(RF24_PA_HIGH);
+  radio.setPALevel(RF24_PA_MAX);
+  radio.setAutoAck(true);
   radio.enableAckPayload();
   radio.enableDynamicPayloads();
   radio.openWritingPipe(pipe);
+  radio.setRetries(15, 15);
 
   // Find median of Hall Sensor in middle position
   calibrateHallSensor();
@@ -85,7 +73,6 @@ void setup() {
 
 
 void loop() {
-
   if (triggerActive())
   {
     calculateHallSpeed();
@@ -104,7 +91,6 @@ void loop() {
 }
 
 void updateDisplay() {
-
   if (connected == true) {
     statusBlink(2);
   } else {
@@ -113,7 +99,6 @@ void updateDisplay() {
 
   u8g2.firstPage();
   do {
-  
     drawSpeed();
     drawBatteryLevel();
     drawSignalStrenght();
@@ -121,8 +106,22 @@ void updateDisplay() {
   } while ( u8g2.nextPage() );
 }
 
-void drawSpeed(){
+void drawStartScreen(){
+  u8g2.firstPage();
+  do {
+    u8g2.drawXBM( 4, 4, 24, 24, u8g_logo_bits);
+    
+    displayString = "Esk8 remote";
+    displayString.toCharArray(displayBuffer, 12);
+  
+    u8g2.setFont(u8g2_font_helvR10_tf  );
+    u8g2.drawStr(34, 22, displayBuffer);   
+  } while ( u8g2.nextPage() );
 
+  delay(1500);  
+}
+
+void drawSpeed(){
   // Position on OLED
   int x = 3; int y = 26;
   
@@ -147,7 +146,6 @@ void drawSignalStrenght(){
 
   u8g2.setFont(u8g2_font_7x13_mr);
   u8g2.drawStr(x, y+12, displayBuffer);
-  
 }
 
 void drawBatteryLevel() {
@@ -172,7 +170,6 @@ void drawBatteryLevel() {
 
   u8g2.setFont(u8g2_font_7x13_mr);
   u8g2.drawStr(x + 27, y + 10, displayBuffer);
-
 }
 
 boolean triggerActive() {
@@ -221,8 +218,9 @@ void calibrateHallSensor() {
 }
 
 void transmitToVesc() {
+  gotByte = 0;
 
-  if(millis() - lastTransmission >= 250){
+  if(millis() - lastTransmission >= 50){
 
     lastTransmission = millis();
     
@@ -238,14 +236,18 @@ void transmitToVesc() {
     {
       failCount = 0;
       sendSuccess = false;
+      Serial.println("Forbundet");
     } else {
       failCount++;
+       Serial.println("Fejlet: " + (String)failCount);
     }
   
-    if (failCount == 0) {
+    if (failCount < 5) {
       connected = true;
+      
     } else {
       connected = false;
+     
     }
   }
 }
@@ -284,6 +286,7 @@ void calculateHallSpeed() {
     hallSpeed = 255;
   }
 }
+
 
 void statusBlink(int state) {
   switch (state) {
