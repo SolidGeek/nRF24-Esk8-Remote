@@ -5,34 +5,36 @@
 #include "RF24.h"
 #include "VescUart.h"
 
+#define DEBUG
+
+#ifdef DEBUG
+  #define DEBUG_PRINT(x)  Serial.println (x)
+  #include "printf.h"
+#else
+  #define DEBUG_PRINT(x)
+#endif
+
+// Defining the type of display used (128x32)
 U8G2_SSD1306_128X32_UNIVISION_1_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
-static unsigned char u8g_logo_bits[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7e, 0x00, 0x80, 0x3c, 0x01, 0xe0, 0x00, 0x07, 0x70, 0x18, 0x0e, 0x30, 0x18, 0x0c, 0x98, 0x99, 0x19, 0x80, 0xff, 0x01, 0x04, 0xc3, 0x20, 0x0c, 0x99, 0x30, 0xec, 0xa5, 0x37, 0xec, 0xa5, 0x37, 0x0c, 0x99, 0x30, 0x04, 0xc3, 0x20, 0x80, 0xff, 0x01, 0x98, 0x99, 0x19, 0x30, 0x18, 0x0c, 0x70, 0x18, 0x0e, 0xe0, 0x00, 0x07, 0x80, 0x3c, 0x01, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+static unsigned char logo_bits[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7e, 0x00, 0x80, 0x3c, 0x01, 0xe0, 0x00, 0x07, 0x70, 0x18, 0x0e, 0x30, 0x18, 0x0c, 0x98, 0x99, 0x19, 0x80, 0xff, 0x01, 0x04, 0xc3, 0x20, 0x0c, 0x99, 0x30, 0xec, 0xa5, 0x37, 0xec, 0xa5, 0x37, 0x0c, 0x99, 0x30, 0x04, 0xc3, 0x20, 0x80, 0xff, 0x01, 0x98, 0x99, 0x19, 0x30, 0x18, 0x0c, 0x70, 0x18, 0x0e, 0xe0, 0x00, 0x07, 0x80, 0x3c, 0x01, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
-static unsigned char wifi_bits[] = {
-  0xc0, 0xff, 0x00, 0xf0, 0xff, 0x03, 0x7c, 0x80, 0x0f, 0x1e, 0x00, 0x1e,
-  0x07, 0x00, 0x38, 0x03, 0x3f, 0x30, 0xc0, 0xff, 0x00, 0xf0, 0xe1, 0x03,
-  0x78, 0x80, 0x07, 0x18, 0x00, 0x06, 0x00, 0x1e, 0x00, 0x80, 0x7f, 0x00,
-  0xc0, 0xe1, 0x00, 0x40, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00,
-  0x00, 0x12, 0x00, 0x00, 0x12, 0x00, 0x00, 0x0c, 0x00
+static unsigned char signal_transmitting_bits[] = {
+  0x18, 0x00, 0x0c, 0x00, 0xc6, 0x00, 0x66, 0x00, 0x23, 0x06, 0x33, 0x0f,
+  0x33, 0x0f, 0x23, 0x06, 0x66, 0x00, 0xc6, 0x00, 0x0c, 0x00, 0x18, 0x00
 };
 
-static unsigned char wifi_nosignal_bits[] = {
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00,
-  0x00, 0x12, 0x00, 0x00, 0x12, 0x00, 0x00, 0x0c, 0x00
+static unsigned char signal_connected_bits[] = {
+  0x18, 0x00, 0x0c, 0x00, 0xc6, 0x00, 0x66, 0x00, 0x23, 0x06, 0x33, 0x09,
+  0x33, 0x09, 0x23, 0x06, 0x66, 0x00, 0xc6, 0x00, 0x0c, 0x00, 0x18, 0x00
 };
 
-static unsigned char wifi_transmitting_bits[] = {
-  0xc0, 0xff, 0x00, 0xf0, 0xff, 0x03, 0x7c, 0x80, 0x0f, 0x1e, 0x00, 0x1e,
-  0x07, 0x00, 0x38, 0x03, 0x3f, 0x30, 0xc0, 0xff, 0x00, 0xf0, 0xe1, 0x03,
-  0x78, 0x80, 0x07, 0x18, 0x00, 0x06, 0x00, 0x1e, 0x00, 0x80, 0x7f, 0x00,
-  0xc0, 0xe1, 0x00, 0x40, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x00,
-  0x00, 0x1e, 0x00, 0x00, 0x1e, 0x00, 0x00, 0x0c, 0x00
+static unsigned char signal_noconnection_bits[] = {
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x09,
+  0x00, 0x09, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
+// Defining struct to hold UART data.
 struct vescValues {
   float ampHours;
   float inpVoltage;
@@ -40,6 +42,15 @@ struct vescValues {
   long tachometerAbs;
 };
 
+// Defining struct to hold stats 
+struct stats {
+  float maxSpeed;
+  long maxRpm;
+  float minVoltage;
+  float maxVoltage;
+};
+
+// Defining struct to hold setting values while remote is turned on.
 struct settings {
   byte triggerMode;
   byte batteryType;
@@ -54,13 +65,13 @@ struct settings {
   int maxHallValue;
 };
 
-const int numOfSettings = 11;
-
+// Defining variables for speed and distance calculation
 float gearRatio;
 float ratioRpmSpeed;
 float ratioPulseDistance;
 
-int currentSetting = 0;
+byte currentSetting = 0;
+const byte numOfSettings = 11;
 
 String settingPages[numOfSettings][2] = {
   {"Trigger",         ""},
@@ -78,8 +89,8 @@ String settingPages[numOfSettings][2] = {
 
 // Setting rules format: default, min, max.
 int settingRules[numOfSettings][3] {
-  {0, 0, 3}, // Killswitch, cruise & data toggle
-  {0, 0, 1}, // Li-ion & LiPo
+  {0, 0, 3}, // 0 Killswitch, 1 cruise & 2 data toggle
+  {0, 0, 1}, // 0 Li-ion & 1 LiPo
   {10, 0, 12},
   {14, 0, 250},
   {15, 0, 250},
@@ -95,16 +106,10 @@ struct vescValues data;
 struct settings remoteSettings;
 
 // Pin defination
-const int powerLedPin = 6;
-const int statusLedPin = 5;
-const int triggerPin = 4;
+const byte triggerPin = 4;
+const int chargeMeasurePin = A1;
 const int batteryMeasurePin = A2;
 const int hallSensorPin = A3;
-
-unsigned int statusBlinkOff = 100;
-unsigned int statusBlinkOn = 100;
-bool statusBlinkState = LOW;
-unsigned long lastStatusBlink = 0;
 
 // Battery monitering
 const float minVoltage = 3.2;
@@ -112,24 +117,26 @@ const float maxVoltage = 4.1;
 const float refVoltage = 5.0; // Set to 4.5V if you are testing connected to USB, otherwise 5V (or the supply voltage)
 
 // Defining variables for Hall Effect throttle.
-int hallMeasurement, throttle;
-int hallCenterMargin = 4;
+short hallMeasurement, throttle;
+byte hallCenterMargin = 4;
 
 // Defining variables for NRF24 communication
 bool connected = false;
-int failCount;
-int failed = 0;
-const uint64_t pipe = 0xE8E8F0F0E1LL;
+short failCount;
+const uint64_t pipe = 0xE8E8F0F0E1LL; // If you change the pipe, you will need to update it on the receiver to.
 unsigned long lastTransmission;
 
 // Defining variables for OLED display
 char displayBuffer[20];
 String displayString;
+short displayData = 0;
+unsigned long lastSignalBlink;
+unsigned long lastDataRotation;
 
 // Instantiating RF24 object for NRF24 communication
 RF24 radio(7, 8);
 
-// Mode
+// Defining variables for Settings menu
 bool changeSettings = false;
 bool changeSelectedSetting = false;
 
@@ -137,18 +144,19 @@ bool settingsLoopFlag = false;
 bool settingsChangeFlag = false;
 bool settingsChangeValueFlag = false;
 
-void setup() {
-  // setDefaultEEPROMSettings();
 
+void setup() {
+  // setDefaultEEPROMSettings(); // Call this function if you want to reset settings
+  
+  #ifdef DEBUG
+    Serial.begin(9600);
+  #endif
+  
   loadEEPROMSettings();
 
-  pinMode(statusLedPin, OUTPUT);
   pinMode(triggerPin, INPUT_PULLUP);
   pinMode(hallSensorPin, INPUT);
-  pinMode(powerLedPin, OUTPUT);
   pinMode(batteryMeasurePin, INPUT);
-  // Turn on the powerLED.
-  digitalWrite(powerLedPin, HIGH);
 
   u8g2.begin();
 
@@ -159,19 +167,21 @@ void setup() {
     drawTitleScreen("Remote Settings");
   }
 
-  // Start radio communication at MAX POWER!!!
+  // Start radio communication
   radio.begin();
   radio.setPALevel(RF24_PA_MAX);
   radio.enableAckPayload();
   radio.enableDynamicPayloads();
   radio.openWritingPipe(pipe);
 
-  // Set the statusLED to blink
-  statusBlink(1);
+  #ifdef DEBUG
+    printf_begin();
+    radio.printDetails();
+  #endif
 }
 
 void loop() {
-
+  
   calculateThrottlePosition();
 
   if (changeSettings == true) {
@@ -261,7 +271,7 @@ void drawSettingNumber() {
   displayString = (String)(currentSetting + 1);
   displayString.toCharArray(displayBuffer, displayString.length() + 1);
 
-  u8g2.setFont(u8g2_font_10x20_tf);
+  u8g2.setFont(u8g2_font_profont22_tn);
   u8g2.drawStr(x + 108, 22, displayBuffer);
 }
 
@@ -273,14 +283,14 @@ void drawSettingsMenu() {
   displayString = settingPages[currentSetting][0];
   displayString.toCharArray(displayBuffer, displayString.length() + 1);
 
-  u8g2.setFont(u8g2_font_7x13_tf);
+  u8g2.setFont(u8g2_font_profont12_tr);
   u8g2.drawStr(x, y, displayBuffer);
 
   int val = getSettingValue(currentSetting);
 
   displayString = (String)val + "" + settingPages[currentSetting][1];
   displayString.toCharArray(displayBuffer, displayString.length() + 1);
-  u8g2.setFont(u8g2_font_10x20_tf );
+  u8g2.setFont(u8g2_font_10x20_tr  );
 
   if (changeSelectedSetting == true) {
     u8g2.drawStr(x + 10, y + 20, displayBuffer);
@@ -407,13 +417,16 @@ void transmitToVesc() {
       // Transmission was a succes
       failCount = 0;
       sendSuccess = false;
+
+      DEBUG_PRINT("Transmission succes");
     } else {
       // Transmission was not a succes
       failCount++;
-      failed++;
+
+      DEBUG_PRINT("Failed transmission");
     }
 
-    // If lost more than 5 transmissions, connection is lost.
+    // If lost more than 5 transmissions, we can assume that connection is lost.
     if (failCount < 5) {
       connected = true;
     } else {
@@ -470,11 +483,6 @@ float batteryVoltage() {
 }
 
 void updateMainDisplay() {
-  if (connected == true) {
-    statusBlink(2);
-  } else {
-    statusBlink(1);
-  }
 
   u8g2.firstPage();
   do {
@@ -483,9 +491,10 @@ void updateMainDisplay() {
       drawSettingsMenu();
       drawSettingNumber();
     } else {
-      drawSpeed();
+      drawThrottle();
+      drawPage();
       drawBatteryLevel();
-      drawSignalStrenght();
+      drawSignal();
     }
 
   } while ( u8g2.nextPage() );
@@ -494,11 +503,11 @@ void updateMainDisplay() {
 void drawStartScreen() {
   u8g2.firstPage();
   do {
-    u8g2.drawXBM( 4, 4, 24, 24, u8g_logo_bits);
+    u8g2.drawXBM( 4, 4, 24, 24, logo_bits);
 
     displayString = "Esk8 remote";
     displayString.toCharArray(displayBuffer, 12);
-    u8g2.setFont(u8g2_font_helvR10_tf  );
+    u8g2.setFont(u8g2_font_profont12_tr  );
     u8g2.drawStr(34, 22, displayBuffer);
   } while ( u8g2.nextPage() );
   delay(1500);
@@ -508,18 +517,25 @@ void drawTitleScreen(String title) {
   u8g2.firstPage();
   do {
     title.toCharArray(displayBuffer, 20);
-    u8g2.setFont(u8g2_font_helvR10_tf  );
+    u8g2.setFont(u8g2_font_profont12_tr  );
     u8g2.drawStr(12, 20, displayBuffer);
   } while ( u8g2.nextPage() );
   delay(1500);
 }
 
-int displayData = 0;
-unsigned long lastDataRotation;
+void drawPage() {
+  int decimals;
+  float value;
+  String suffix;
+  String prefix;
 
-void drawSpeed() {
-  // Rotate the realtime data each 2s.
-  if ((millis() - lastDataRotation) >= 2000) {
+  int first, last;
+
+  int x = 0;
+  int y = 16;
+
+  // Rotate the realtime data each 4s.
+  if ((millis() - lastDataRotation) >= 4000) {
 
     lastDataRotation = millis();
     displayData++;
@@ -529,64 +545,115 @@ void drawSpeed() {
     }
   }
 
-  int decimals;
-  float value;
-  String suffix;
-
   switch (displayData) {
     case 0:
       value = ratioRpmSpeed * data.rpm;
-      suffix = "km/h";
+      suffix = "KMH";
+      prefix = "SPEED";
       decimals = 1;
       break;
     case 1:
       value = ratioPulseDistance * data.tachometerAbs;
-      suffix = "km";
+      suffix = "KM";
+      prefix = "DISTANCE";
       decimals = 2;
       break;
     case 2:
       value = data.inpVoltage;
       suffix = "V";
+      prefix = "BATTERY";
       decimals = 1;
       break;
   }
 
-  // Position on OLED
-  int x = 3; int y = 16;
-
-  displayString = String(value, decimals) + " " + suffix;
+  // Display prefix (title)
+  displayString = prefix;
   displayString.toCharArray(displayBuffer, 10);
+  u8g2.setFont(u8g2_font_profont12_tr);
+  u8g2.drawStr(x, y - 1, displayBuffer);
 
-  u8g2.setFont(u8g2_font_helvR10_tf);
-  u8g2.drawStr(x, y, displayBuffer);
+  // Split up the float value: a number, b decimals.
+  first = abs(floor(value));
+  last = value * pow(10, 3) - first * pow(10, 3);
 
-  u8g2.drawHLine(x, y + 5, 64);
+  // Add leading zero
+  if (first <= 9) {
+    displayString = "0" + (String)first;
+  } else {
+    displayString = (String)first;
+  }
+
+  // Display numbers
+  displayString.toCharArray(displayBuffer, 10);
+  u8g2.setFont(u8g2_font_logisoso22_tn );
+  u8g2.drawStr(x + 55, y + 13, displayBuffer);
+
+  // Display decimals
+  displayString = "." + (String)last;
+  displayString.toCharArray(displayBuffer, decimals + 2);
+  u8g2.setFont(u8g2_font_profont12_tr);
+  u8g2.drawStr(x + 86, y - 1, displayBuffer);
+
+  // Display suffix
+  displayString = suffix;
+  displayString.toCharArray(displayBuffer, 10);
+  u8g2.setFont(u8g2_font_profont12_tr);
+  u8g2.drawStr(x + 86 + 2, y + 13, displayBuffer);
+
+}
+
+void drawThrottle() {
+  int x = 0;
+  int y = 18;
+
+  // Draw throttle
+  u8g2.drawHLine(x, y, 52);
+  u8g2.drawVLine(x, y, 10);
+  u8g2.drawVLine(x + 52, y, 10);
+  u8g2.drawHLine(x, y + 10, 5);
+  u8g2.drawHLine(x + 52 - 4, y + 10, 5);
 
   if (throttle >= 127) {
-    int width = map(throttle, 127, 255, 1, 64);
-    u8g2.drawBox(x, y + 5, width, 4);
+    int width = map(throttle, 127, 255, 0, 49);
+
+    for (int i = 0; i < width; i++) {
+      //if( (i % 2) == 0){
+      u8g2.drawVLine(x + i + 2, y + 2, 7);
+      //}
+    }
   } else {
-    int width = map(throttle, 0, 126, 64, 1);
-    u8g2.drawBox(x + 64 - width, y + 5, width, 4);
+    int width = map(throttle, 0, 126, 49, 0);
+    for (int i = 0; i < width; i++) {
+      //if( (i % 2) == 0){
+      u8g2.drawVLine(x + 50 - i, y + 2, 7);
+      //}
+    }
+
   }
 }
 
-void drawSignalStrenght() {
+bool signalBlink = false;
+
+void drawSignal() {
   // Position on OLED
-  int x = 72; int y = 6;
+  int x = 114; int y = 17;
 
-  if (triggerActive()) {
-
-    if (connected == true) {
-      u8g2.drawXBM(x, y, 22, 19, wifi_transmitting_bits);
+  if (connected == true) {
+    if (triggerActive()) {
+      u8g2.drawXBM(x, y, 12, 12, signal_transmitting_bits);
     } else {
-      u8g2.drawXBM(x, y, 22, 19, wifi_nosignal_bits);
+      u8g2.drawXBM(x, y, 12, 12, signal_connected_bits);
     }
   } else {
-    if (connected == true) {
-      u8g2.drawXBM(x, y, 22, 19, wifi_bits);
+    if (millis() - lastSignalBlink > 500) {
+      signalBlink = !signalBlink;
+      lastSignalBlink = millis();
+    }
+
+    if (signalBlink == true) {
+      u8g2.drawXBM(x, y, 12, 12, signal_connected_bits);
     } else {
-      u8g2.drawXBM(x, y, 22, 19, wifi_nosignal_bits);
+      u8g2.drawXBM(x, y, 12, 12, signal_noconnection_bits);
     }
   }
 }
@@ -595,52 +662,16 @@ void drawBatteryLevel() {
   int level = batteryLevel();
 
   // Position on OLED
-  int x = 100; int y = 3;
+  int x = 108; int y = 4;
 
-  u8g2.drawFrame(x + 2, y, 21, 10);
-  u8g2.drawBox(x, y + 2, 2, 6);
+  u8g2.drawFrame(x + 2, y, 18, 9);
+  u8g2.drawBox(x, y + 2, 2, 5);
 
-  for (int i = 0; i < 6; i++) {
-    int p = round((100 / 6) * i);
+  for (int i = 0; i < 5; i++) {
+    int p = round((100 / 5) * i);
     if (p <= level)
     {
-      u8g2.drawBox(x + 4 + (3 * i), y + 2, 2, 6);
+      u8g2.drawBox(x + 4 + (3 * i), y + 2, 2, 5);
     }
   }
-  displayString = (String)level + "%";
-  displayString.toCharArray(displayBuffer, 8);
-
-  u8g2.setFont(u8g2_font_7x13_tf);
-  u8g2.drawStr(x, y + 25, displayBuffer);
-}
-
-void statusBlink(int state) {
-  switch (state) {
-    case 0:
-      statusBlinkOff = 100;
-      statusBlinkOn = 100;
-      break;
-    case 1:
-      statusBlinkOff = 100;
-      statusBlinkOn = 500;
-      break;
-    case 2:
-      statusBlinkOff = 0;
-      statusBlinkOn = 1000;
-      break;
-  }
-
-  if ((lastStatusBlink + statusBlinkOff) < millis() && statusBlinkState == LOW) {
-    statusBlinkState = HIGH;
-    lastStatusBlink = millis();
-  }
-  if ((lastStatusBlink + statusBlinkOn) < millis() && statusBlinkState == HIGH) {
-    statusBlinkState = LOW;
-    lastStatusBlink = millis();
-  }
-  if (statusBlinkOff == 0) {
-    statusBlinkState = HIGH;
-  }
-
-  digitalWrite(statusLedPin, statusBlinkState);
 }
