@@ -162,7 +162,7 @@ void setup() {
 
   drawStartScreen();
 
-  if (triggerActive()) {
+  if (!triggerActive()) {
     changeSettings = true;
     drawTitleScreen("Remote Settings");
   }
@@ -507,7 +507,7 @@ void drawStartScreen() {
 
     displayString = "Esk8 remote";
     displayString.toCharArray(displayBuffer, 12);
-    u8g2.setFont(u8g2_font_profont12_tr  );
+    u8g2.setFont(u8g2_font_helvR10_tr  );
     u8g2.drawStr(34, 22, displayBuffer);
   } while ( u8g2.nextPage() );
   delay(1500);
@@ -517,7 +517,7 @@ void drawTitleScreen(String title) {
   u8g2.firstPage();
   do {
     title.toCharArray(displayBuffer, 20);
-    u8g2.setFont(u8g2_font_profont12_tr  );
+    u8g2.setFont(u8g2_font_helvR10_tr  );
     u8g2.drawStr(12, 20, displayBuffer);
   } while ( u8g2.nextPage() );
   delay(1500);
