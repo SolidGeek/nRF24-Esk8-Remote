@@ -5,7 +5,7 @@
 #include "RF24.h"
 #include "VescUart.h"
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
   #define DEBUG_PRINT(x)  Serial.println (x)
@@ -162,7 +162,7 @@ void setup() {
 
   drawStartScreen();
 
-  if (!triggerActive()) {
+  if (triggerActive()) {
     changeSettings = true;
     drawTitleScreen("Remote Settings");
   }
