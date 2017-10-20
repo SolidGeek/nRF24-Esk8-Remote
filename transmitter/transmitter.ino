@@ -150,9 +150,11 @@ bool settingsLoopFlag = false;
 bool settingsChangeFlag = false;
 bool settingsChangeValueFlag = false;
 
+// Safe mode if remote is turned on with full throttle
+bool safeStart = true;
 
 void setup() {
-  // setDefaultEEPROMSettings(); // Call this function if you want to reset settings
+  //setDefaultEEPROMSettings(); // Call this function if you want to reset settings
   
   #ifdef DEBUG
     Serial.begin(9600);
@@ -171,6 +173,12 @@ void setup() {
   if (triggerActive()) {
     changeSettings = true;
     drawTitleScreen("Remote Settings");
+  }
+
+  // Check if throttle is not center activate safe mode
+  calculateThrottlePosition();
+  if (hallMeasurement > remoteSettings.centerHallValue + remoteSettings.deadzone) {
+    safeStart = false;
   }
 
   // Start radio communication
@@ -196,16 +204,34 @@ void loop() {
   }
   else
   {
-    // Use throttle and trigger to drive motors
-    if (triggerActive())
-    {
-      throttle = throttle;
+    // Re center joystick for unlock safe mode
+    if (!safeStart && hallMeasurement <= remoteSettings.centerHallValue + remoteSettings.deadzone + 10) {
+      safeStart = true;
     }
-    else
-    {
-      // 127 is the middle position - no throttle and no brake/reverse
+
+    if (safeStart) {
+      switch (remoteSettings.triggerMode) {
+        case 1:
+        case 2:
+        case 3:
+          throttle = throttle;
+          break;
+        default:
+          // Use throttle and trigger to drive motors
+          if (triggerActive()) {
+            throttle = throttle;
+          }
+          else {
+            // 127 is the middle position - no throttle and no brake/reverse
+            throttle = 127;
+          }
+        break;
+      }
+    }
+    else {
       throttle = 127;
     }
+
     // Transmit to receiver
     transmitToVesc();
   }
