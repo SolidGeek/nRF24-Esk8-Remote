@@ -3,6 +3,9 @@
 #include "RF24.h"
 #include "VescUart.h"
 
+// set true to use uart for sending throttle 
+bool useUartRx = true; 
+
 struct vescValues {
   float ampHours;
   float inpVoltage;
@@ -20,6 +23,7 @@ int motorSpeed = 127;
 int timeoutMax = 500;
 int speedPin = 5;
 
+struct remotePackage remPack;
 struct bldcMeasure measuredValues;
 
 struct vescValues data;
@@ -34,8 +38,18 @@ void setup() {
   radio.openReadingPipe(1, pipe);
   radio.startListening();
 
-  pinMode(speedPin, OUTPUT);
-  analogWrite(speedPin, motorSpeed);
+  if (useUartRx) 
+  { 
+    remPack.valXJoy         = 127; //middle Position 
+    remPack.valYJoy         = 127; 
+    remPack.valLowerButton  = 0; 
+    remPack.valLowerButton  = 0; 
+  } 
+  else 
+  { 
+    pinMode(speedPin, OUTPUT); 
+    analogWrite(speedPin, motorSpeed); 
+  }
 }
 
 void loop() {
@@ -50,6 +64,7 @@ void loop() {
 
     // Read the actual message
     radio.read(&motorSpeed, sizeof(motorSpeed));
+    if (useUartRx) { remPack.valYJoy = motorSpeed; }
     recievedData = true;
   }
 
@@ -60,14 +75,23 @@ void loop() {
     lastTimeReceived = millis();
     recievedData = false;
 
-    // Write the PWM signal to the ESC (0-255).
-    analogWrite(speedPin, motorSpeed);
+    if (useUartRx) { 
+      VescUartSetNunchukValues(remPack); 
+    } else { 
+      // Write the PWM signal to the ESC (0-255). 
+      analogWrite(speedPin, motorSpeed); 
+    }
   }
   else if ((millis() - lastTimeReceived) > timeoutMax)
   {
     // No speed is received within the timeout limit.
     motorSpeed = 127;
-    analogWrite(speedPin, motorSpeed);
+    if (useUartRx) { 
+      remPack.valYJoy = motorSpeed; 
+      VescUartSetNunchukValues(remPack); 
+    } else { 
+      analogWrite(speedPin, motorSpeed); 
+    }
   }
 }
 
