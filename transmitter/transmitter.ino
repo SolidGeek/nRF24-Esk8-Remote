@@ -5,11 +5,11 @@
 #include "RF24.h"
 #include "VescUart.h"
 
-// #define DEBUG
+//#define DEBUG
 
 #ifdef DEBUG
   #define DEBUG_PRINT(x)  Serial.println (x)
-  #include "printf.h"
+  //#include "printf.h"
 #else
   #define DEBUG_PRINT(x)
 #endif
@@ -130,7 +130,9 @@ int HallMenuMargin  = 50;
 // Defining variables for NRF24 communication
 bool connected = false;
 short failCount;
-const uint64_t pipe = 0xE8E8F0F0E1LL; // If you change the pipe, you will need to update it on the receiver to.
+int radioChannel = 108; // Above most WiFi frequencies
+
+const uint64_t pipe = 0xE8E8F0F0E1LL; // 0xE8E8F0F0E1LL If you change the pipe, you will need to update it on the receiver to.
 unsigned long lastTransmission;
 
 // Defining variables for OLED display
@@ -184,13 +186,14 @@ void setup() {
 
   // Start radio communication
   radio.begin();
+  radio.setChannel(radioChannel);
   radio.setPALevel(RF24_PA_MAX);
   radio.enableAckPayload();
   radio.enableDynamicPayloads();
   radio.openWritingPipe(pipe);
 
   #ifdef DEBUG
-    printf_begin();
+    //printf_begin();
     radio.printDetails();
   #endif
 }
@@ -448,7 +451,7 @@ void transmitToVesc() {
     while (radio.isAckPayloadAvailable()) {
       radio.read(&data, sizeof(data));
     }
-
+    
     if (sendSuccess == true)
     {
       // Transmission was a succes
