@@ -63,6 +63,8 @@ struct settings {
   int minHallValue;
   int centerHallValue;
   int maxHallValue;
+  int deadzone;
+  bool reverseThrottle;
 };
 
 // Defining variables for speed and distance calculation
@@ -71,7 +73,7 @@ float ratioRpmSpeed;
 float ratioPulseDistance;
 
 byte currentSetting = 0;
-const byte numOfSettings = 11;
+const byte numOfSettings = 13;
 
 String settingPages[numOfSettings][2] = {
   {"Trigger",         ""},
@@ -84,22 +86,26 @@ String settingPages[numOfSettings][2] = {
   {"UART data",       ""},
   {"Throttle min",    ""},
   {"Throttle center", ""},
-  {"Throttle max",    ""}
+  {"Throttle max",    ""},
+  {"Throttle deadzone",""},
+  {"throttle Reverse",""}
 };
 
 // Setting rules format: default, min, max.
 int settingRules[numOfSettings][3] {
-  {0, 0, 3}, // 0 Killswitch, 1 cruise & 2 data toggle
-  {0, 0, 1}, // 0 Li-ion & 1 LiPo
-  {10, 0, 12},
+  {2, 0, 3},    // 0 Killswitch, 1 cruise & 2 data toggle
+  {0, 0, 1},    // 0 Li-ion & 1 LiPo
+  {12, 0, 12},
   {14, 0, 250},
   {15, 0, 250},
-  {40, 0, 250},
-  {83, 0, 250},
-  {1, 0, 1}, // Yes or no
+  {32, 0, 250},
+  {80, 0, 250},
+  {1, 0, 1},    // Yes or no
   {0, 0, 1023},
-  {512, 0, 1023},
-  {1023, 0, 1023}
+  {512, 0, 1023}, // 512 hallSensor, 450 joystick
+  {1023, 0, 1023},// 1023 hallSensor, 900 joystick
+  {10, 0, 100},   // ex: 50 For joystick with big deadzone
+  {0, 0, 1}       // 1 Reverse Throttle input.
 };
 
 struct vescValues data;
@@ -107,9 +113,9 @@ struct settings remoteSettings;
 
 // Pin defination
 const byte triggerPin = 4;
-const int chargeMeasurePin = A1;
-const int batteryMeasurePin = A2;
-const int hallSensorPin = A3;
+//const int chargeMeasurePin = A1; // (A1) Not used yet
+const int batteryMeasurePin = A2; // (A2)
+const int hallSensorPin = A3; // (A3) You can use joystick, juste change your min max center throttle value
 
 // Battery monitering
 const float minVoltage = 3.2;
@@ -362,6 +368,8 @@ int getSettingValue(int index) {
     case 8: value = remoteSettings.minHallValue;    break;
     case 9: value = remoteSettings.centerHallValue; break;
     case 10: value = remoteSettings.maxHallValue;   break;
+    case 11: value = remoteSettings.deadzone;       break;
+    case 12: value = remoteSettings.reverseThrottle;break;
   }
   return value;
 }
@@ -380,6 +388,8 @@ void setSettingValue(int index, int value) {
     case 8: remoteSettings.minHallValue = value;    break;
     case 9: remoteSettings.centerHallValue = value; break;
     case 10: remoteSettings.maxHallValue = value;   break;
+    case 11: remoteSettings.deadzone = value;       break;
+    case 12: remoteSettings.reverseThrottle = value;break;
   }
 }
 
@@ -436,17 +446,30 @@ void transmitToVesc() {
 }
 
 void calculateThrottlePosition() {
+
   // Hall sensor reading can be noisy, lets make an average reading.
   int total = 0;
   for (int i = 0; i < 10; i++) {
     total += analogRead(hallSensorPin);
   }
   hallMeasurement = total / 10;
+  
+  if (remoteSettings.reverseThrottle) {
+    hallMeasurement = map(hallMeasurement, remoteSettings.minHallValue, remoteSettings.maxHallValue, remoteSettings.maxHallValue, remoteSettings.minHallValue);
+  }
+  
+  DEBUG_PRINT("hallMeasurement: ");
+  DEBUG_PRINT(hallMeasurement);
 
-  if (hallMeasurement >= remoteSettings.centerHallValue) {
-    throttle = constrain(map(hallMeasurement, remoteSettings.centerHallValue, remoteSettings.maxHallValue, 127, 255), 127, 255);
-  } else {
-    throttle = constrain(map(hallMeasurement, remoteSettings.minHallValue, remoteSettings.centerHallValue, 0, 127), 0, 127);
+  if (hallMeasurement >= remoteSettings.centerHallValue + remoteSettings.deadzone) {
+    throttle = constrain(map(hallMeasurement, remoteSettings.centerHallValue + remoteSettings.deadzone, remoteSettings.maxHallValue, 127, 255), 127, 255);
+  } 
+  else if (hallMeasurement <= remoteSettings.centerHallValue - remoteSettings.deadzone) {
+    throttle = constrain(map(hallMeasurement, remoteSettings.minHallValue, remoteSettings.centerHallValue - remoteSettings.deadzone, 0, 127), 0, 127);
+  }
+  else {
+    // Default value if stick is in deadzone
+    throttle = 127;
   }
 
   // removeing center noise
