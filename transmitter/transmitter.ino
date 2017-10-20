@@ -125,6 +125,7 @@ const float refVoltage = 5.0; // Set to 4.5V if you are testing connected to USB
 // Defining variables for Hall Effect throttle.
 short hallMeasurement, throttle;
 byte hallCenterMargin = 4;
+int HallMenuMargin  = 50;
 
 // Defining variables for NRF24 communication
 bool connected = false;
@@ -256,7 +257,7 @@ void controlSettingsMenu() {
     settingsChangeFlag = false;
   }
 
-  if (hallMeasurement >= (remoteSettings.maxHallValue - 50) && settingsLoopFlag == false) {
+  if (hallMeasurement >= (remoteSettings.maxHallValue - HallMenuMargin) && settingsLoopFlag == false) {
     // Up
     if (changeSelectedSetting == true) {
       int val = getSettingValue(currentSetting) + 1;
@@ -272,7 +273,7 @@ void controlSettingsMenu() {
       }
     }
   }
-  else if (hallMeasurement <= (remoteSettings.minHallValue + 50) && settingsLoopFlag == false) {
+  else if (hallMeasurement <= (remoteSettings.minHallValue + HallMenuMargin) && settingsLoopFlag == false) {
     // Down
     if (changeSelectedSetting == true) {
       int val = getSettingValue(currentSetting) - 1;
@@ -287,7 +288,7 @@ void controlSettingsMenu() {
         settingsLoopFlag = true;
       }
     }
-  } else if (inRange(hallMeasurement, remoteSettings.centerHallValue - 50, remoteSettings.centerHallValue + 50)) {
+  } else if (inRange(hallMeasurement, remoteSettings.centerHallValue - HallMenuMargin, remoteSettings.centerHallValue + HallMenuMargin)) {
     settingsLoopFlag = false;
   }
 }
@@ -583,15 +584,31 @@ void drawPage() {
   int x = 0;
   int y = 16;
 
-  // Rotate the realtime data each 4s.
-  if ((millis() - lastDataRotation) >= 4000) {
+  switch (remoteSettings.triggerMode) {
+    case 2:
+      if (triggerActive()) {
+        if ((millis() - lastDataRotation) >= 600) {
+          lastDataRotation = millis();
+          displayData++;
+      
+          if (displayData > 2) {
+            displayData = 0;
+          }
+        }
+      }
+      break;
+    default:
+      // Rotate the realtime data each 4s.
+      if ((millis() - lastDataRotation) >= 4000) {
 
-    lastDataRotation = millis();
-    displayData++;
-
-    if (displayData > 2) {
-      displayData = 0;
-    }
+        lastDataRotation = millis();
+        displayData++;
+    
+        if (displayData > 2) {
+          displayData = 0;
+        }
+      }
+    break;
   }
 
   switch (displayData) {
