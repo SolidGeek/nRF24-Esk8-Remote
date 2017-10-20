@@ -628,7 +628,7 @@ void drawPage() {
       decimals = 2;
       break;
     case 2:
-      value = data.inpVoltage;
+      value = data.inpVoltage / 10;
       suffix = "V";
       prefix = "BATTERY";
       decimals = 1;
