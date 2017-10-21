@@ -42,6 +42,13 @@ struct vescValues {
   long tachometerAbs;
 };
 
+// Defining struct to hold remote send data
+struct remoteData { //   cmd    | settings
+  byte packageType; //    0     |    1
+  byte item1;       // throttle | useUart
+  byte item2;       // Button   |    -
+};
+
 // Defining struct to hold stats 
 struct stats {
   float maxSpeed;
@@ -110,6 +117,8 @@ int settingRules[numOfSettings][3] {
 
 struct vescValues data;
 struct settings remoteSettings;
+
+struct remoteData remData;
 
 // Pin defination
 const byte triggerPin = 4;
@@ -421,6 +430,8 @@ void setSettingValue(int index, int value) {
     case 11: remoteSettings.deadzone = value;       break;
     case 12: remoteSettings.reverseThrottle = value;break;
   }
+
+  sendSettings();
 }
 
 // Check if an integer is within a min and max value
@@ -445,7 +456,10 @@ void transmitToVesc() {
 
     boolean sendSuccess = false;
     // Transmit the speed value (0-255).
-    sendSuccess = radio.write(&throttle, sizeof(throttle));
+    remData.packageType = 0; // cmd
+    remData.item1 = throttle;
+    remData.item2 = triggerActive();
+    sendSuccess = radio.write(&remData, sizeof(remData));
 
     // Listen for an acknowledgement reponse (return of VESC data).
     while (radio.isAckPayloadAvailable()) {
@@ -473,6 +487,19 @@ void transmitToVesc() {
       connected = false;
     }
   }
+}
+
+void sendSettings() {
+  remData.item1 = remoteSettings.useUart;
+  remData.packageType = 1; // settings
+
+  radio.write(&remData, sizeof(remData));
+
+  // Listen for an acknowledgement reponse (return of VESC data).
+  while (radio.isAckPayloadAvailable()) {
+    radio.read(&data, sizeof(data));
+  }
+  
 }
 
 void calculateThrottlePosition() {
