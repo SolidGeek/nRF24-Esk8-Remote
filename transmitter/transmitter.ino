@@ -443,6 +443,8 @@ void calculateThrottlePosition() {
   }
   hallMeasurement = total / 10;
 
+  DEBUG_PRINT( (String)hallMeasurement );
+  
   if (hallMeasurement >= remoteSettings.centerHallValue) {
     throttle = constrain(map(hallMeasurement, remoteSettings.centerHallValue, remoteSettings.maxHallValue, 127, 255), 127, 255);
   } else {
