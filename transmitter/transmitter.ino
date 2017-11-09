@@ -134,7 +134,7 @@ unsigned long lastSignalBlink;
 unsigned long lastDataRotation;
 
 // Instantiating RF24 object for NRF24 communication
-RF24 radio(7, 8);
+RF24 radio(9, 10);
 
 // Defining variables for Settings menu
 bool changeSettings = false;
