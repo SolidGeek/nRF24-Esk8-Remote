@@ -5,7 +5,7 @@
 #include "RF24.h"
 #include "VescUart.h"
 
-// #define DEBUG
+#define DEBUG
 
 #ifdef DEBUG
   #define DEBUG_PRINT(x)  Serial.println (x)
@@ -35,7 +35,7 @@ static unsigned char signal_noconnection_bits[] = {
 };
 
 // Defining struct to hold UART data.
-struct vescValues {
+struct uart {
   float ampHours;
   float inpVoltage;
   long rpm;
@@ -50,6 +50,16 @@ struct stats {
   float maxVoltage;
 };
 
+struct package {
+  byte throttle; // Throttle value
+  bool trigger; // Trigger state
+
+  bool newSettings; // Update receiver settings
+  byte mode; // PPM only, PPM and UART  or UART only
+  byte triggerMode; // Killswitch, Cruise or data toggle
+  uint64_t address; // New pipe
+};
+
 // Defining struct to hold setting values while remote is turned on.
 struct settings {
   byte triggerMode;
@@ -59,10 +69,11 @@ struct settings {
   byte motorPulley;
   byte wheelPulley;
   byte wheelDiameter;
-  bool useUart;
+  byte mode;
   int minHallValue;
   int centerHallValue;
   int maxHallValue;
+  uint64_t address;
 };
 
 // Defining variables for speed and distance calculation
@@ -71,43 +82,30 @@ float ratioRpmSpeed;
 float ratioPulseDistance;
 
 byte currentSetting = 0;
-const byte numOfSettings = 11;
-
-String settingPages[numOfSettings][2] = {
-  {"Trigger",         ""},
-  {"Battery type",    ""},
-  {"Battery cells",   "S"},
-  {"Motor poles",     ""},
-  {"Motor pulley",    "T"},
-  {"Wheel pulley",    "T"},
-  {"Wheel diameter",  "mm"},
-  {"UART data",       ""},
-  {"Throttle min",    ""},
-  {"Throttle center", ""},
-  {"Throttle max",    ""}
-};
+const byte numOfSettings = 12;
 
 // Setting rules format: default, min, max.
-int settingRules[numOfSettings][3] {
-  {0, 0, 3}, // 0 Killswitch, 1 cruise & 2 data toggle
+const short settingRules[numOfSettings][3] {
+  {0, 0, 2}, // 0 Killswitch, 1 cruise & 2 data toggle
   {0, 0, 1}, // 0 Li-ion & 1 LiPo
   {10, 0, 12},
   {14, 0, 250},
   {15, 0, 250},
   {40, 0, 250},
   {83, 0, 250},
-  {1, 0, 1}, // Yes or no
+  {1, 0, 2}, // 0: PPM only, 1: PPM and UART  or 2: UART only
   {0, 0, 1023},
   {512, 0, 1023},
-  {1023, 0, 1023}
+  {1023, 0, 1023},
+  {-1, 0, 0} // No validation for pipe address (not really possible this way)
 };
 
-struct vescValues data;
+struct uart uartData;
+struct package remoteData;
 struct settings remoteSettings;
 
 // Pin defination
 const byte triggerPin = 4;
-const int chargeMeasurePin = A1;
 const int batteryMeasurePin = A2;
 const int hallSensorPin = A3;
 
@@ -123,7 +121,7 @@ byte hallCenterMargin = 4;
 // Defining variables for NRF24 communication
 bool connected = false;
 short failCount;
-const uint64_t pipe = 0xE8E8F0F0E1LL; // If you change the pipe, you will need to update it on the receiver to.
+const uint64_t defaultPipe = 0xE8E8F0F0E1LL; // If you change the default pipe, you will need to update it on the receiver to.
 unsigned long lastTransmission;
 
 // Defining variables for OLED display
@@ -164,7 +162,7 @@ void setup() {
 
   if (triggerActive()) {
     changeSettings = true;
-    drawTitleScreen("Remote Settings");
+    drawTitleScreen(F("Remote Settings"));
   }
 
   // Start radio communication
@@ -172,7 +170,7 @@ void setup() {
   radio.setPALevel(RF24_PA_MAX);
   radio.enableAckPayload();
   radio.enableDynamicPayloads();
-  radio.openWritingPipe(pipe);
+  radio.openWritingPipe(remoteSettings.address);
 
   #ifdef DEBUG
     printf_begin();
@@ -200,11 +198,14 @@ void loop() {
       // 127 is the middle position - no throttle and no brake/reverse
       throttle = 127;
     }
+
+    remoteData.throttle = throttle;
+    
     // Transmit to receiver
-    transmitToVesc();
+    transmitToReceiver();
   }
 
-  // Call function to update display and LED
+  // Call function to update display
   updateMainDisplay();
 }
 
@@ -227,12 +228,16 @@ void controlSettingsMenu() {
   if (hallMeasurement >= (remoteSettings.maxHallValue - 50) && settingsLoopFlag == false) {
     // Up
     if (changeSelectedSetting == true) {
-      int val = getSettingValue(currentSetting) + 1;
-
-      if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
-        setSettingValue(currentSetting, val);
-        settingsLoopFlag = true;
+      
+      if(settingRules[currentSetting][0] != -1){
+        int val = getSettingValue(currentSetting) + 1;
+        
+        if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
+          setSettingValue(currentSetting, val);
+          settingsLoopFlag = true;
+        }
       }
+     
     } else {
       if (currentSetting != 0) {
         currentSetting--;
@@ -243,12 +248,16 @@ void controlSettingsMenu() {
   else if (hallMeasurement <= (remoteSettings.minHallValue + 50) && settingsLoopFlag == false) {
     // Down
     if (changeSelectedSetting == true) {
-      int val = getSettingValue(currentSetting) - 1;
 
-      if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
-        setSettingValue(currentSetting, val);
-        settingsLoopFlag = true;
+      if(settingRules[currentSetting][0] != -1){
+        int val = getSettingValue(currentSetting) - 1;
+  
+        if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
+          setSettingValue(currentSetting, val);
+          settingsLoopFlag = true;
+        }
       }
+      
     } else {
       if (currentSetting < (numOfSettings - 1)) {
         currentSetting++;
@@ -258,37 +267,91 @@ void controlSettingsMenu() {
   } else if (inRange(hallMeasurement, remoteSettings.centerHallValue - 50, remoteSettings.centerHallValue + 50)) {
     settingsLoopFlag = false;
   }
+
+  // Special cases
+
+  if(changeSelectedSetting == true){
+
+    // If selected setting is pairing, repair
+    if(currentSetting == 11){
+
+      
+      
+    }
+  }
 }
 
-void drawSettingNumber() {
-  // Position on OLED
-  int x = 2; int y = 10;
+// To save precious SRAM we define function to catch settingTitles
+String getSettingTitle(int index){
+  String title;
+  
+  switch(index){
+    case 0: title = "Trigger use"; break;
+    case 1: title = "Battery type"; break;
+    case 2: title = "Battery cells"; break;
+    case 3: title = "Motor poles"; break;
+    case 4: title = "Motor pulley"; break;
+    case 5: title = "Wheel pulley"; break;
+    case 6: title = "Wheel diameter"; break;
+    case 7: title = "Mode"; break;
+    case 8: title = "Throttle min"; break;
+    case 9: title = "Throttle center"; break;
+    case 10: title = "Throttle max"; break;
+    case 11: title = "Address"; break;
+  }
 
-  // Draw current setting number box
-  u8g2.drawRFrame(x + 102, y - 10, 22, 32, 4);
-
-  // Draw current setting number
-  displayString = (String)(currentSetting + 1);
-  displayString.toCharArray(displayBuffer, displayString.length() + 1);
-
-  u8g2.setFont(u8g2_font_profont22_tn);
-  u8g2.drawStr(x + 108, 22, displayBuffer);
+  return title;
 }
 
 void drawSettingsMenu() {
+  // To save even more precious SRAM we define strings local
+  String settingValues[3][3] = {
+    {"Killswitch", "Cruise", "Data toggle"},
+    {"Li-ion", "LiPo", ""},
+    {"PPM", "PPM and UART", "UART"},
+  };
+
+  String settingUnits[3] = {
+    "S", "T", "mm"
+  };
+
+  byte unitIdentifier[numOfSettings]  = {0,0,1,0,2,2,3,0,0,0,0,0};
+  byte valueIdentifier[numOfSettings] = {1,2,0,0,0,0,0,3,0,0,0,0};
+
+  String settingValue,settingUnit;
+  
+  short value;
+  
   // Position on OLED
-  int x = 0; int y = 10;
+  byte x = 0; byte y = 10;
 
   // Draw setting title
-  displayString = settingPages[currentSetting][0];
+  displayString = getSettingTitle(currentSetting);
   displayString.toCharArray(displayBuffer, displayString.length() + 1);
 
   u8g2.setFont(u8g2_font_profont12_tr);
   u8g2.drawStr(x, y, displayBuffer);
 
-  int val = getSettingValue(currentSetting);
+  value = getSettingValue(currentSetting);
 
-  displayString = (String)val + "" + settingPages[currentSetting][1];
+  // Check if there is a text string for the setting value
+  if(valueIdentifier[currentSetting] != 0){
+    
+    int index = valueIdentifier[currentSetting] - 1;
+    settingValue = settingValues[index][value];
+    
+  }else{
+    
+    settingValue = (String)value;
+    
+  }
+ 
+  if(unitIdentifier[currentSetting] != 0){
+    settingUnit = settingUnits[unitIdentifier[currentSetting]-1];
+  }
+
+  // Display the setting value, and the unit (settingPages[currentSetting][1])
+  displayString = settingValue + settingUnit;
   displayString.toCharArray(displayBuffer, displayString.length() + 1);
   u8g2.setFont(u8g2_font_10x20_tr  );
 
@@ -304,6 +367,7 @@ void setDefaultEEPROMSettings() {
     setSettingValue(i, settingRules[i][0]);
   }
 
+  remoteSettings.address = defaultPipe;
   updateEEPROMSettings();
 }
 
@@ -317,10 +381,13 @@ void loadEEPROMSettings() {
   for (int i = 0; i < numOfSettings; i++) {
     int val = getSettingValue(i);
 
-    if (! inRange(val, settingRules[i][1], settingRules[i][2])) {
-      // Setting is damaged or never written. Rewrite default.
-      rewriteSettings = true;
-      setSettingValue(i, settingRules[i][0]);
+    // If setting default value is -1, don't check if its valid
+    if( settingRules[i][0] != -1 ){
+      if (! inRange(val, settingRules[i][1], settingRules[i][2])) {
+        // Setting is damaged or never written. Rewrite default.
+        rewriteSettings = true;
+        setSettingValue(i, settingRules[i][0] );
+      }
     }
   }
 
@@ -358,7 +425,7 @@ int getSettingValue(int index) {
     case 4: value = remoteSettings.motorPulley;     break;
     case 5: value = remoteSettings.wheelPulley;     break;
     case 6: value = remoteSettings.wheelDiameter;   break;
-    case 7: value = remoteSettings.useUart;         break;
+    case 7: value = remoteSettings.mode;            break;
     case 8: value = remoteSettings.minHallValue;    break;
     case 9: value = remoteSettings.centerHallValue; break;
     case 10: value = remoteSettings.maxHallValue;   break;
@@ -376,7 +443,7 @@ void setSettingValue(int index, int value) {
     case 4: remoteSettings.motorPulley = value;     break;
     case 5: remoteSettings.wheelPulley = value;     break;
     case 6: remoteSettings.wheelDiameter = value;   break;
-    case 7: remoteSettings.useUart = value;         break;
+    case 7: remoteSettings.mode = value;            break;
     case 8: remoteSettings.minHallValue = value;    break;
     case 9: remoteSettings.centerHallValue = value; break;
     case 10: remoteSettings.maxHallValue = value;   break;
@@ -397,19 +464,19 @@ boolean triggerActive() {
 }
 
 // Function used to transmit the throttle value, and receive the VESC realtime data.
-void transmitToVesc() {
+void transmitToReceiver() {
   // Transmit once every 50 millisecond
   if (millis() - lastTransmission >= 50) {
 
     lastTransmission = millis();
 
     boolean sendSuccess = false;
-    // Transmit the speed value (0-255).
-    sendSuccess = radio.write(&throttle, sizeof(throttle));
+    // Transmit the remoteData package
+    sendSuccess = radio.write(&remoteData, sizeof(remoteData));
 
-    // Listen for an acknowledgement reponse (return of VESC data).
+    // Listen for an acknowledgement reponse (return of uart data).
     while (radio.isAckPayloadAvailable()) {
-      radio.read(&data, sizeof(data));
+      radio.read(&uartData, sizeof(uartData));
     }
 
     if (sendSuccess == true)
@@ -418,12 +485,12 @@ void transmitToVesc() {
       failCount = 0;
       sendSuccess = false;
 
-      DEBUG_PRINT("Transmission succes");
+      DEBUG_PRINT(F("Transmission succes"));
     } else {
       // Transmission was not a succes
       failCount++;
 
-      DEBUG_PRINT("Failed transmission");
+      DEBUG_PRINT(F("Failed transmission"));
     }
 
     // If lost more than 5 transmissions, we can assume that connection is lost.
@@ -435,6 +502,52 @@ void transmitToVesc() {
   }
 }
 
+void establishPair(){
+
+  uint64_t response;
+  byte retries = 0;
+
+  // Prepare the remoteData with current settings
+  remoteData.newSettings = true;
+  remoteData.mode = remoteSettings.mode;
+  remoteData.address = remoteSettings.address;
+
+  retryTransmit:
+  
+  boolean sendSuccess = false;
+  // Transmit the remoteData package
+  sendSuccess = radio.write(&remoteData, sizeof(remoteData));
+  
+  while (radio.isAckPayloadAvailable()) {
+    radio.read(&response, sizeof(response));
+  }
+
+  if(response == remoteSettings.address){
+
+    // Settings been updated on receiver use the new address as pipe 
+    
+    remoteData.change = false;
+    remoteData.mode = NULL;
+    remoteData.address = NULL;
+
+    // Success - write new settings to EEPROM
+    updateEEPROMSettings();
+    
+  }else{
+
+    if(retries < 5){
+      // Try again 
+      retries++;
+      delay(100);
+      goto retryTransmit;
+    }
+
+    // Failure - fallback to old settings
+    loadEEPROMSettings();
+      
+  }
+}
+
 void calculateThrottlePosition() {
   // Hall sensor reading can be noisy, lets make an average reading.
   int total = 0;
@@ -443,6 +556,10 @@ void calculateThrottlePosition() {
   }
   hallMeasurement = total / 10;
 
+  #ifdef DEBUG
+    //DEBUG_PRINT("Throttle: " + (String)hallMeasurement);
+  #endif
+  
   if (hallMeasurement >= remoteSettings.centerHallValue) {
     throttle = constrain(map(hallMeasurement, remoteSettings.centerHallValue, remoteSettings.maxHallValue, 127, 255), 127, 255);
   } else {
@@ -483,13 +600,12 @@ float batteryVoltage() {
 }
 
 void updateMainDisplay() {
-
   u8g2.firstPage();
   do {
 
     if (changeSettings == true) {
       drawSettingsMenu();
-      drawSettingNumber();
+      // drawSettingNumber();
     } else {
       drawThrottle();
       drawPage();
@@ -505,7 +621,7 @@ void drawStartScreen() {
   do {
     u8g2.drawXBM( 4, 4, 24, 24, logo_bits);
 
-    displayString = "Esk8 remote";
+    displayString = F("Esk8 remote");
     displayString.toCharArray(displayBuffer, 12);
     u8g2.setFont(u8g2_font_helvR10_tr  );
     u8g2.drawStr(34, 22, displayBuffer);
@@ -547,21 +663,21 @@ void drawPage() {
 
   switch (displayData) {
     case 0:
-      value = ratioRpmSpeed * data.rpm;
-      suffix = "KMH";
-      prefix = "SPEED";
+      value = ratioRpmSpeed * uartData.rpm;
+      suffix = F("KMH");
+      prefix = F("SPEED");
       decimals = 1;
       break;
     case 1:
-      value = ratioPulseDistance * data.tachometerAbs;
-      suffix = "KM";
-      prefix = "DISTANCE";
+      value = ratioPulseDistance * uartData.tachometerAbs;
+      suffix = F("KM");
+      prefix = F("DISTANCE");
       decimals = 2;
       break;
     case 2:
-      value = data.inpVoltage;
-      suffix = "V";
-      prefix = "BATTERY";
+      value = uartData.inpVoltage;
+      suffix = F("V");
+      prefix = F("BATTERY");
       decimals = 1;
       break;
   }
@@ -599,7 +715,6 @@ void drawPage() {
   displayString.toCharArray(displayBuffer, 10);
   u8g2.setFont(u8g2_font_profont12_tr);
   u8g2.drawStr(x + 86 + 2, y + 13, displayBuffer);
-
 }
 
 void drawThrottle() {
@@ -628,7 +743,6 @@ void drawThrottle() {
       u8g2.drawVLine(x + 50 - i, y + 2, 7);
       //}
     }
-
   }
 }
 
@@ -674,4 +788,71 @@ void drawBatteryLevel() {
       u8g2.drawBox(x + 4 + (3 * i), y + 2, 2, 5);
     }
   }
+}
+
+// Generate a random pipe address for nrf24 communication
+uint64_t generatePipe()
+{
+  // Holding the address as char array
+  char temp[10];
+
+  // Char arrays with HEX digites
+  const char *hexdigits = "0123456789ABCDEF";
+  const char *safedigits = "12346789BCDE";
+
+  // Generate a char array with the pipe address
+  for(int i = 0 ; i < 10; i++ )
+  {
+    char next;
+    
+    // Avoid addresses that start with 0x00, 0x55, 0xAA and 0xFF.
+    if(i == 0)
+      next = safedigits[ random(0, 12) ];
+    else if(i == 1)
+      next = safedigits[ random(0, 12) ];
+
+    // Otherwise generate random HEX digit
+    else
+      next = hexdigits[ random(0, 16) ];
+      
+    temp[i] = next;
+  }
+  // Convert hex char array to uint64_t 
+  uint64_t address = StringToUint64(temp);
+
+  return address;
+}
+
+String uint64ToString(uint64_t number)
+{
+  unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
+  unsigned long part2 = (unsigned long)((number));
+
+  return String(part1, HEX) + String(part2, HEX);
+}
+
+/* http://forum.arduino.cc/index.php?topic=233813.0 */
+
+// Convert hex String to uint64_t
+uint64_t StringToUint64( char * string ){
+  uint64_t x = 0;
+  char c;
+  
+  do {
+    c = hexCharToBin( *string++ );
+    if (c < 0)
+      break;
+    x = (x << 4) | c;
+  } while (1);
+  
+  return x;
+}
+
+char hexCharToBin(char c) {
+  if (isdigit(c)) {  // 0 - 9
+    return c - '0';
+  } else if (isxdigit(c)) { // A-F, a-f
+    return (c & 0xF) + 9;
+  }
+  return -1;
 }
