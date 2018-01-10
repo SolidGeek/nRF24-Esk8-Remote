@@ -8,7 +8,7 @@ I have made a Wiki here on Github, with a few tips and guides on how to build th
 
 Donation link: https://www.paypal.me/solidgeek
 
-Update v2.0
+## Update v2.0
 
 This is a big update I have been working on. Lots of new improvements, and bug fixes including:
 
