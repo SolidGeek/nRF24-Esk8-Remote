@@ -155,6 +155,7 @@ void setup() {
 	#ifdef DEBUG
 		Serial.begin(9600);
     printLoadedSettings();
+    printf_begin();
 	#endif
 	
 	pinMode(triggerPin, INPUT_PULLUP);
@@ -171,17 +172,8 @@ void setup() {
 	}
 
 	// Start radio communication
-	radio.begin();
-	// radio.setChannel(defaultChannel);
-	radio.setPALevel(RF24_PA_MAX);
-	radio.enableAckPayload();
-	radio.enableDynamicPayloads();
-	radio.openWritingPipe(txSettings.address);
-
-	#ifdef DEBUG
-		printf_begin();
-		radio.printDetails();
-	#endif
+	initiateTransmitter();
+  
 }
 
 void loop() {
@@ -295,7 +287,7 @@ void controlSettingsMenu() {
 					if( transmitSetting( currentSetting, address ) )
 					{
 						setSettingValue(currentSetting, address);
-            restartReceiver();
+            initiateTransmitter();
 					}
 					else{
 						// Error! Load the old address
@@ -444,6 +436,8 @@ void transmitToReceiver(){
 			radio.read(&returnData, sizeof(returnData));
 		}
 
+    Serial.print(uint64ToAddress(txSettings.address) + ": " );
+
 		if (sendSuccess == true)
 		{
 			// Transmission was a succes
@@ -468,10 +462,10 @@ void transmitToReceiver(){
 }
 
 bool transmitSetting(uint8_t setting, uint64_t value){
-
   
-
 	uint64_t returnedValue;
+
+  Serial.print(uint64ToAddress(txSettings.address) + ": " );
 
 	// Tell the receiver next package will be new settings
 	remPackage.type = 1;
@@ -528,14 +522,20 @@ bool transmitSetting(uint8_t setting, uint64_t value){
   
 }
 
-// Restart the nrf24 to transmit on new address
-void restartReceiver(){
-  DEBUG_PRINT("Resetting receiver address");
-  radio.stopListening();
-  delay(50);
-  radio.openWritingPipe( txSettings.address);
-}
+void initiateTransmitter(){
+  
+  radio.begin();
+  // radio.setChannel(defaultChannel);
+  radio.setPALevel(RF24_PA_MAX);
+  radio.enableAckPayload();
+  radio.enableDynamicPayloads();
+  radio.openWritingPipe( txSettings.address );
 
+  #ifdef DEBUG
+    radio.printDetails();
+  #endif
+
+}
 
 void updateMainDisplay() {
 	u8g2.firstPage();

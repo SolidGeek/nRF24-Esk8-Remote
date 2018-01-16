@@ -90,17 +90,13 @@ void setup()
 		Serial.begin(9600);
 		DEBUG_PRINT("Booting");
 		printLoadedSettings();
+    printf_begin();
 	#else
 		// Using RX and TX to get VESC data
 		SERIALIO.begin(115200);
 	#endif
 
-	radio.begin();
-	// radio.setChannel(defaultChannel);
-	radio.enableAckPayload();
-	radio.enableDynamicPayloads();
-	radio.openReadingPipe(1, rxSettings.address);
-	radio.startListening();
+  initiateReceiver();
 
 	pinMode(throttlePin, OUTPUT);
 	pinMode(resetButtonPin, INPUT_PULLUP);
@@ -109,25 +105,26 @@ void setup()
 	analogWrite(throttlePin, defaultThrottle);
 }
 
-int dump;
-
 void loop()
-{
+{ 
+  
 	// If transmission is available
 	while (radio.available())
 	{
 		// Read and store the received package
 		radio.read( &remPackage, sizeof(remPackage) );
 
-    if( remPackage.type <= 2 ){
-      DEBUG_PRINT("Received new package: '" + (String)remPackage.type + "-" + (String)remPackage.throttle + "-" + (String)remPackage.trigger + "'" );
-      timeoutTimer = millis();
-      recievedData = true;
-    }
+		if( remPackage.type <= 2 ){
+			DEBUG_PRINT("Received new package: '" + (String)remPackage.type + "-" + (String)remPackage.throttle + "-" + (String)remPackage.trigger + "'" );
+			timeoutTimer = millis();
+			recievedData = true;
+		}
 	}
 
 	// New data received
 	if(recievedData == true){
+
+		Serial.print(uint64ToAddress(rxSettings.address) + ": " );
 
 		if ( remPackage.type == 0 ) {
 			// Normal package
@@ -138,7 +135,7 @@ void loop()
 			}
 
 			// The next time a transmission is received, the returnData will be sent back in acknowledgement 
-			radio.writeAckPayload(rxSettings.address, &returnData, sizeof(returnData));
+			radio.writeAckPayload(1, &returnData, sizeof(returnData));
 
 		} else if ( remPackage.type == 1 ) {
 
@@ -152,24 +149,23 @@ void loop()
 
 	if ( timeoutMax <= ( millis() - timeoutTimer ) )
 	{
-	    // No speed is received within the timeout limit.
-	    updateThrottle( defaultThrottle );
-	    DEBUG_PRINT("Timeout");
-      timeoutTimer = millis();
-     
+		Serial.print(uint64ToAddress(rxSettings.address) + ": " );
+
+		// No speed is received within the timeout limit.
+		updateThrottle( defaultThrottle );
+		DEBUG_PRINT("Timeout");
+		timeoutTimer = millis();
 	}
 }
-
-
 
 void waitForSetting(){
 
 	uint64_t value;
 	unsigned long beginTime = millis(); 
-  bool receivedSetting = false;
-  bool receivedConfirm = false;
+	bool receivedSetting = false;
+	bool receivedConfirm = false;
 
-  DEBUG_PRINT("Waiting for new setting...");
+	DEBUG_PRINT("Waiting for new setting...");
 
 	// Wait for new setting
 	while(500 >= ( millis() - beginTime) && receivedSetting == false){
@@ -178,67 +174,71 @@ void waitForSetting(){
 		{
 			// Read and store the received
 			radio.read( &setPackage, sizeof(setPackage) );
-      receivedSetting = true;
+			receivedSetting = true;
 
-      if(setPackage.setting == 11){
-        DEBUG_PRINT("Received new setting: '" + (String)setPackage.setting + "=" + uint64ToAddress(setPackage.value) + "'");  
-      }else{
-        DEBUG_PRINT("Received new setting: '" + (String)setPackage.setting + "=" + uint64ToString(setPackage.value) + "'");
-      }
-			
+			if(setPackage.setting == 11){
+				DEBUG_PRINT("Received new setting: '" + (String)setPackage.setting + "=" + uint64ToAddress(setPackage.value) + "'");  
+			}else{
+				DEBUG_PRINT("Received new setting: '" + (String)setPackage.setting + "=" + uint64ToString(setPackage.value) + "'");
+			}
 		}
 	}
 
-  if ( receivedSetting == true ) {
-    value = setPackage.value;
+	if ( receivedSetting == true ) {
 
-    // Return the new setting value with auto ack to validate the process
-    radio.writeAckPayload(rxSettings.address, &value, sizeof(value));
-    DEBUG_PRINT("Queued setting acknowledgement");
-  
-    beginTime = millis(); 
-  
-    // Wait for dummy package (otherwise acknowledgement will not be send)
-    while(500 >= ( millis() - beginTime) && receivedConfirm == false){
-  
-      while (radio.available())
-      {
-        radio.read( &remPackage, sizeof(remPackage) );
-        receivedConfirm = true;
-        
-        DEBUG_PRINT("Received confirm package.");
-      }
-    }
+		value = setPackage.value;
 
-    if( receivedConfirm == true ){
-      updateSetting(setPackage.setting, value);
-      DEBUG_PRINT("Updated setting.");
-    }
+		// Return the new setting value with auto ack to validate the process
+		radio.writeAckPayload(1, &value, sizeof(value));
+		DEBUG_PRINT("Queued setting acknowledgement");
 
-    delay(500);
-  }
+		beginTime = millis(); 
 
-  if (receivedSetting == false || receivedConfirm == false)
-  {
-    DEBUG_PRINT("Failed! Clearing receiver buffer");
-    delay(500);
-    while (radio.available())
-    {
-      radio.read( &setPackage, sizeof(setPackage) );
-      DEBUG_PRINT("Cleared buffer");
-    }
-  }
+		// Wait for dummy package (otherwise acknowledgement will not be send)
+		while(500 >= ( millis() - beginTime) && receivedConfirm == false){
+
+			while (radio.available())
+			{
+				radio.read( &remPackage, sizeof(remPackage) );
+				receivedConfirm = true;
+
+				DEBUG_PRINT("Received confirm package.");
+			}
+		}
+
+		if( receivedConfirm == true ){
+			updateSetting(setPackage.setting, value);
+			DEBUG_PRINT("Updated setting.");
+		}
+
+		delay(500);
+	}
+
+	if (receivedSetting == false || receivedConfirm == false)
+	{
+		DEBUG_PRINT("Failed! Clearing receiver buffer");
+		delay(500);
+		while (radio.available())
+		{
+			radio.read( &setPackage, sizeof(setPackage) );
+			DEBUG_PRINT("Cleared buffer");
+		}
+	}
 }
 
-// Restart the nrf24 after receiving new address
-void restartReceiver(){
-  DEBUG_PRINT("Resetting receiver address");
-  radio.stopListening();
-  radio.closeReadingPipe(1);
+void initiateReceiver(){
 
-  delay(50);
-  radio.openReadingPipe(1, rxSettings.address);
-  radio.startListening();
+	radio.begin();
+	// radio.setChannel(defaultChannel);
+	radio.enableAckPayload();
+	radio.enableDynamicPayloads();
+	radio.openReadingPipe(1, rxSettings.address);
+	radio.startListening();
+
+	#ifdef DEBUG
+		radio.printDetails();
+	#endif
+
 }
 
 // Update a single setting value
@@ -253,9 +253,10 @@ void updateSetting( uint8_t setting, uint64_t value)
 	
 	setSettingValue( setting, value);
 
-  if(setting == 2) {
-    restartReceiver(); 
-  }
+	// The address has changed, we need to reinitiate the receiver module
+	if(setting == 2) {
+		initiateReceiver(); 
+	}
 }
 
 void updateThrottle( uint8_t throttle )
@@ -305,17 +306,16 @@ void getUartData()
 	}
 }
 
-
-
 String uint64ToString(uint64_t number)
 {
-  unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
-  unsigned long part2 = (unsigned long)((number));
+	unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
+	unsigned long part2 = (unsigned long)((number));
 
-  if(part1 == 0){
-    return String(part2, DEC);
-  }
-  return String(part1, DEC) + String(part2, DEC);
+	if(part1 == 0){
+		return String(part2, DEC);
+	}
+	
+	return String(part1, DEC) + String(part2, DEC);
 }
 
 String uint64ToAddress(uint64_t number)
@@ -397,12 +397,12 @@ void setSettingValue(int index, uint64_t value)
 // Get settings value by index (usefull when iterating through settings).
 int getSettingValue(uint8_t index)
 {
-  int value;
-  switch (index) {
-    case 0: value = rxSettings.triggerMode; break;
-    case 1: value = rxSettings.controlMode; break;
-  }
-  return value;
+	int value;
+	switch (index) {
+		case 0: value = rxSettings.triggerMode; break;
+		case 1: value = rxSettings.controlMode; break;
+	}
+	return value;
 }
 
 bool inRange(int val, int minimum, int maximum)
