@@ -185,7 +185,7 @@ void setup() {
 }
 
 void loop() {
-	
+  
 	calculateThrottlePosition();
 
 	if (changeSettings == true) {
@@ -295,6 +295,7 @@ void controlSettingsMenu() {
 					if( transmitSetting( currentSetting, address ) )
 					{
 						setSettingValue(currentSetting, address);
+            restartReceiver();
 					}
 					else{
 						// Error! Load the old address
@@ -468,10 +469,9 @@ void transmitToReceiver(){
 
 bool transmitSetting(uint8_t setting, uint64_t value){
 
-	uint64_t returnedValue;
+  
 
-  // First lets clear the ack-buffer (so it can later be used to confirm the new setting).
-  // But how D-:
+	uint64_t returnedValue;
 
 	// Tell the receiver next package will be new settings
 	remPackage.type = 1;
@@ -485,8 +485,22 @@ bool transmitSetting(uint8_t setting, uint64_t value){
 	setPackage.value = value;
 
 	radio.write(&setPackage, sizeof(setPackage));
-	DEBUG_PRINT("Transmitted new setting: " + (String)setting + "=" + uint64ToString(value) );
+	
+  if(setting == 11){
+    DEBUG_PRINT("Transmitted new setting: " + (String)setting + "=" + uint64ToAddress(value) );  
+  }else{
+    DEBUG_PRINT("Transmitted new setting: " + (String)setting + "=" + uint64ToString(value) );
+  }
+	
 	delay(100);
+
+  // Lets clear the ack-buffer (so it can be used to confirm the new setting).
+  while (radio.isAckPayloadAvailable()) {
+    radio.read(&returnData, sizeof(returnData));
+    DEBUG_PRINT("Cleared buffer");
+  }
+  
+  delay(100);
 
 	// Write dummy package to receive auto ack
 	remPackage.type = 2; 
@@ -496,7 +510,12 @@ bool transmitSetting(uint8_t setting, uint64_t value){
 
 	while (radio.isAckPayloadAvailable()) {
 		radio.read(&returnedValue, sizeof(returnedValue));
-		DEBUG_PRINT("Received auto ack: " + uint64ToString(returnedValue) );
+
+    if(setting == 11){
+      DEBUG_PRINT("Received auto ack: " + uint64ToAddress(returnedValue) );  
+    }else{
+      DEBUG_PRINT("Received auto ack: " + uint64ToString(returnedValue) );
+    }
 	}
 
 	if(returnedValue == value){
@@ -508,6 +527,15 @@ bool transmitSetting(uint8_t setting, uint64_t value){
 	return false;
   
 }
+
+// Restart the nrf24 to transmit on new address
+void restartReceiver(){
+  DEBUG_PRINT("Resetting receiver address");
+  radio.stopListening();
+  delay(50);
+  radio.openWritingPipe( txSettings.address);
+}
+
 
 void updateMainDisplay() {
 	u8g2.firstPage();
@@ -849,6 +877,8 @@ void drawBatteryLevel() {
 
 uint64_t generateAddress()
 {
+  randomSeed( millis() );
+  
 	// Holding the address as char array
 	char temp[10];
 

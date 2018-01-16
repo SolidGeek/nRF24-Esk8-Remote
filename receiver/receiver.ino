@@ -167,6 +167,7 @@ void waitForSetting(){
 	uint64_t value;
 	unsigned long beginTime = millis(); 
   bool receivedSetting = false;
+  bool receivedConfirm = false;
 
   DEBUG_PRINT("Waiting for new setting...");
 
@@ -190,9 +191,7 @@ void waitForSetting(){
 
   if ( receivedSetting == true ) {
     value = setPackage.value;
-    // Update setting
-    updateSetting( setPackage.setting , value );
-  
+
     // Return the new setting value with auto ack to validate the process
     radio.writeAckPayload(rxSettings.address, &value, sizeof(value));
     DEBUG_PRINT("Queued setting acknowledgement");
@@ -200,21 +199,26 @@ void waitForSetting(){
     beginTime = millis(); 
   
     // Wait for dummy package (otherwise acknowledgement will not be send)
-    while(500 >= ( millis() - beginTime)){
+    while(500 >= ( millis() - beginTime) && receivedConfirm == false){
   
       while (radio.available())
       {
         radio.read( &remPackage, sizeof(remPackage) );
-        DEBUG_PRINT("Received dummy package");
-        beginTime = beginTime+500;
+        receivedConfirm = true;
+        
+        DEBUG_PRINT("Received confirm package.");
       }
     }
-  
-    DEBUG_PRINT("Done!");
-  
+
+    if( receivedConfirm == true ){
+      updateSetting(setPackage.setting, value);
+      DEBUG_PRINT("Updated setting.");
+    }
+
     delay(500);
   }
-  else
+
+  if (receivedSetting == false || receivedConfirm == false)
   {
     DEBUG_PRINT("Failed! Clearing receiver buffer");
     delay(500);
@@ -226,6 +230,17 @@ void waitForSetting(){
   }
 }
 
+// Restart the nrf24 after receiving new address
+void restartReceiver(){
+  DEBUG_PRINT("Resetting receiver address");
+  radio.stopListening();
+  radio.closeReadingPipe(1);
+
+  delay(50);
+  radio.openReadingPipe(1, rxSettings.address);
+  radio.startListening();
+}
+
 // Update a single setting value
 void updateSetting( uint8_t setting, uint64_t value)
 {
@@ -235,7 +250,12 @@ void updateSetting( uint8_t setting, uint64_t value)
 		case 7: setting = 1; break;  // ControlMode
 		case 11: setting = 2; break; // Address
 	}
+	
 	setSettingValue( setting, value);
+
+  if(setting == 2) {
+    restartReceiver(); 
+  }
 }
 
 void updateThrottle( uint8_t throttle )
@@ -284,6 +304,8 @@ void getUartData()
 		}
 	}
 }
+
+
 
 String uint64ToString(uint64_t number)
 {
@@ -368,7 +390,7 @@ void setSettingValue(int index, uint64_t value)
 	switch (index) {
 		case 0: rxSettings.triggerMode = value; break;
 		case 1: rxSettings.controlMode = value; break;
-		case 2: rxSettings.address = value;    	break;
+		case 2: rxSettings.address = value;     break;
 	}
 }
 
