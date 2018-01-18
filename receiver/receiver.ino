@@ -7,18 +7,22 @@
 #define DEBUG
 
 #ifdef DEBUG
-  #define DEBUG_PRINT(x)  Serial.println ((String)millis() + ": " + x)
+  #define DEBUG_PRINT(x)  Serial.println (x)
   #include "printf.h"
 #else
   #define DEBUG_PRINT(x)
 #endif
 
 // Transmit and receive package
-struct package {    // | Normal    | Setting 	| Dummy
+struct package {    // | Normal    | Setting 	| Confirm
 	uint8_t type;     // | 0         | 1			  | 2
 	uint8_t throttle;	// | Throttle  |         	| 
 	uint8_t trigger;	// | Trigger   |        	| 
 };
+
+#define NORMAL 0
+#define SETTING 1
+#define CONFIRM 2
 
 // When receiving a "type: 1" package save the next transmission (a new setting) in this struct 
 struct settingPackage {
@@ -61,72 +65,115 @@ const uint8_t defaultChannel = 108;
 uint32_t timeoutTimer = 0;
 bool recievedData = false;
 
-// Current mode of receiver - 0: Listening | 1: Connected | 2: UPDATING settings
+// Current mode of receiver - 0: Connected | 1: Timeout | 2: Updating settings
 uint8_t statusMode = 0;
-#define LISTENING 0
-#define UPDATING 1
+#define CONNECTED 0
+#define TIMEOUT 1
+#define UPDATING 2
+#define RESETTING 3
 
 // Last time data was pulled from VESC
 unsigned long lastUartPull;
 
-const int defaultThrottle = 127;
+// Address reset button
+unsigned long resetButtonTimer;
+bool resetButtonState = LOW;
+
+// Status blink LED
+unsigned long lastStatusBlink;
+bool statusBlinkFlag = LOW;
+
+const uint8_t defaultThrottle = 127;
 const short timeoutMax = 500;
 
 // Defining receiver pins
 const uint8_t CE = 9;
 const uint8_t CS = 10;
+const uint8_t statusLedPin = 4;
 const uint8_t throttlePin = 5;
-const uint8_t resetButtonPin = 6;
+const uint8_t resetAddressPin = 6;
 
 // Initiate RF24 class 
 RF24 radio(CE, CS);
 
 void setup()
 {
-	setDefaultEEPROMSettings();
-	loadEEPROMSettings();
-
 	#ifdef DEBUG
-		Serial.begin(9600);
-		DEBUG_PRINT("Booting");
-		printLoadedSettings();
+		Serial.begin(115200);
+		DEBUG_PRINT("** Esk8-remote receiver **");
     printf_begin();
 	#else
 		// Using RX and TX to get VESC data
 		SERIALIO.begin(115200);
 	#endif
 
+  loadEEPROMSettings();
+
   initiateReceiver();
 
 	pinMode(throttlePin, OUTPUT);
-	pinMode(resetButtonPin, INPUT_PULLUP);
+  pinMode(statusLedPin, OUTPUT);
+	pinMode(resetAddressPin, INPUT_PULLUP);
 
 	// Set default throttle in startup
 	analogWrite(throttlePin, defaultThrottle);
+
+  DEBUG_PRINT("Setup complete - begin listening");
 }
 
 void loop()
 { 
-  
-	// If transmission is available
+  /* Show status by blinking status LED */
+  statusBlink();
+
+  /* Begin address reset */
+  if (digitalRead(resetAddressPin) == LOW) {
+    if(resetButtonState == LOW){
+      resetButtonTimer = millis();
+    }
+
+    statusMode = RESETTING;
+    
+    resetButtonState = HIGH;
+  }else{
+    resetButtonState = LOW;
+  }
+
+  if (resetButtonState == HIGH && (millis() - resetButtonTimer) > 5000 ) {
+
+    DEBUG_PRINT("Loading default address");
+    
+    // Load default address
+    rxSettings.address = defaultAddress;
+    updateEEPROMSettings(); 
+    
+    // Reinitiate the recevier module
+    initiateReceiver();
+    
+    resetButtonTimer = millis();
+  }
+  /* End address reset */
+
+	/* Begin listen for transmission */
 	while (radio.available())
 	{
 		// Read and store the received package
 		radio.read( &remPackage, sizeof(remPackage) );
+    DEBUG_PRINT( uint64ToAddress(rxSettings.address) + " - New package: '" + (String)remPackage.type + "-" + (String)remPackage.throttle + "-" + (String)remPackage.trigger + "'" );
 
 		if( remPackage.type <= 2 ){
-			DEBUG_PRINT("Received new package: '" + (String)remPackage.type + "-" + (String)remPackage.throttle + "-" + (String)remPackage.trigger + "'" );
 			timeoutTimer = millis();
 			recievedData = true;
 		}
 	}
+  /* End listen for transmission */
 
-	// New data received
+	/* Begin data handling */
 	if(recievedData == true){
 
-		Serial.print(uint64ToAddress(rxSettings.address) + ": " );
+    statusMode = CONNECTED;
 
-		if ( remPackage.type == 0 ) {
+		if ( remPackage.type == NORMAL ) {
 			// Normal package
 			updateThrottle( remPackage.throttle );
 			
@@ -137,28 +184,65 @@ void loop()
 			// The next time a transmission is received, the returnData will be sent back in acknowledgement 
 			radio.writeAckPayload(1, &returnData, sizeof(returnData));
 
-		} else if ( remPackage.type == 1 ) {
+		} else if ( remPackage.type == SETTING ) {
 
 			// Next package will be a change of setting
-			
-			waitForSetting();
+			statusMode = UPDATING;
+      
+			acquireSetting();
 		}
 	
 		recievedData = false;
 	}
+  /* End data handling */
 
+  /* Begin timeout handling */
 	if ( timeoutMax <= ( millis() - timeoutTimer ) )
 	{
-		Serial.print(uint64ToAddress(rxSettings.address) + ": " );
-
-		// No speed is received within the timeout limit.
+	  // No speed is received within the timeout limit.
+    statusMode = TIMEOUT;
 		updateThrottle( defaultThrottle );
-		DEBUG_PRINT("Timeout");
 		timeoutTimer = millis();
+
+    DEBUG_PRINT( uint64ToAddress(rxSettings.address) + " - Timeout");
 	}
+  /* End timeout handling */
 }
 
-void waitForSetting(){
+void statusBlink(){
+  int ontime, offtime;
+
+  switch(statusMode){
+    case CONNECTED:
+      ontime = 1000; offtime = 200;
+    break;
+
+    case TIMEOUT:
+      ontime = 200; offtime = 800;
+    break;
+
+    case UPDATING:
+      ontime = 500; offtime = 500;
+    break;
+
+    case RESETTING:
+      ontime = 200; offtime = 200;
+    break;
+  }
+
+  if ((millis() - lastStatusBlink) > offtime && statusBlinkFlag == LOW) {
+    statusBlinkFlag = HIGH;
+    lastStatusBlink = millis();
+  }
+  else if ((millis() - lastStatusBlink) > ontime && statusBlinkFlag == HIGH) {
+    statusBlinkFlag = LOW;
+    lastStatusBlink = millis();
+  }
+
+  digitalWrite(statusLedPin, statusBlinkFlag);
+}
+
+void acquireSetting(){
 
 	uint64_t value;
 	unsigned long beginTime = millis(); 
@@ -236,6 +320,7 @@ void initiateReceiver(){
 	radio.startListening();
 
 	#ifdef DEBUG
+    DEBUG_PRINT("Printing receiver details");
 		radio.printDetails();
 	#endif
 
@@ -252,7 +337,8 @@ void updateSetting( uint8_t setting, uint64_t value)
 	}
 	
 	setSettingValue( setting, value);
-
+  updateEEPROMSettings(); 
+  
 	// The address has changed, we need to reinitiate the receiver module
 	if(setting == 2) {
 		initiateReceiver(); 
@@ -330,6 +416,7 @@ String uint64ToAddress(uint64_t number)
 
 void setDefaultEEPROMSettings()
 {
+  DEBUG_PRINT("Loading default settings.");
 	for (int i = 0; i < numOfSettings; i++) {
 		setSettingValue(i, settingRules[i][0]);
 	}
@@ -365,23 +452,14 @@ void loadEEPROMSettings()
 	{
 		updateEEPROMSettings();
 	}
+
+  DEBUG_PRINT("Settings loaded");
 }
 
-// Write settings to the EEPROM then exiting settings menu.
+// Write settings to the EEPROM
 void updateEEPROMSettings()
 {
 	EEPROM.put(0, rxSettings);
-}
-
-void printLoadedSettings()
-{
-	for(int i = 0; i < numOfSettings; i++){
-		if(i == 2){
-			DEBUG_PRINT( uint64ToString( rxSettings.address ) );
-		}else{
-			DEBUG_PRINT( (String)getSettingValue(i) );
-		}
-	}
 }
 
 // Set a value of a specific setting by index.
