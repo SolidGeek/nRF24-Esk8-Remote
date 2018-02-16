@@ -4,21 +4,21 @@
 #include "RF24.h"
 #include "VescUart.h"
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
-  #define DEBUG_PRINT(x)  Serial.println (x)
-  #include "printf.h"
+	#define DEBUG_PRINT(x)  Serial.println (x)
+	#include "printf.h"
 #else
-  #define DEBUG_PRINT(x)
+	#define DEBUG_PRINT(x)
 #endif
 
 // Transmit and receive package
-struct package {    // | Normal    | Setting 	| Confirm
-	uint8_t type;     // | 0         | 1			  | 2
-	uint8_t throttle;	// | Throttle  |         	| 
-	uint8_t trigger;	// | Trigger   |        	| 
-};
+struct package {		// | Normal    | Setting 	| Confirm
+	uint8_t type;		// | 0         | 1			| 2
+	uint8_t throttle;	// | Throttle  | ---        | ---
+	uint8_t trigger;	// | Trigger   | ---       	| ---
+} remPackage;
 
 #define NORMAL 0
 #define SETTING 1
@@ -28,7 +28,7 @@ struct package {    // | Normal    | Setting 	| Confirm
 struct settingPackage {
 	uint8_t setting;
 	uint64_t value; 
-};
+} setPackage;
 
 // Defining struct to handle callback data (auto ack)
 struct callback {
@@ -36,28 +36,26 @@ struct callback {
 	float inpVoltage;
 	long rpm;
 	long tachometerAbs;
-};
+} returnData;
 
 // Defining struct to handle receiver settings
 struct settings {
 	uint8_t triggerMode; // Trigger mode
 	uint8_t controlMode; // PWM, PWM & UART or UART only
+	uint8_t motorPoles; // Pole pairs
 	uint64_t address;    // Listen on this address
-};
+} rxSettings;
+
+// Struct used to store UART data
+struct bldcMeasure uartData;
 
 const uint8_t numOfSettings = 3;
 // Setting rules format: default, min, max.
 const short settingRules[numOfSettings][3] {
-	{0, 0, 2}, // 0: Killswitch | 1: Cruise       | 2: Data toggle
+	{0, 0, 2}, // 0: Killswitch | 1: Cruise       | 2: Reverse
 	{1,	0, 2}, // 0: PPM only   | 1: PPM and UART | 2: UART only
 	{-1, 0, 0} // No validation for address in this manner 
 };
-
-struct bldcMeasure uartData;
-struct callback returnData;
-struct package remPackage;
-struct settingPackage setPackage;
-struct settings rxSettings;
 
 // Define default 8 byte address
 const uint64_t defaultAddress = 0xE8E8F0F0E1LL;
@@ -66,14 +64,19 @@ uint32_t timeoutTimer = 0;
 bool recievedData = false;
 
 // Current mode of receiver - 0: Connected | 1: Timeout | 2: Updating settings
-uint8_t statusMode = 0;
 #define CONNECTED 0
 #define TIMEOUT 1
-#define UPDATING 2
-#define RESETTING 3
+#define COMPLETE 2
+#define FAILED 3
 
 // Last time data was pulled from VESC
 unsigned long lastUartPull;
+
+// Variables for cruise-control
+long cruiseRPM;
+long lastRPM; 
+uint8_t cruiseThrottle;
+bool cruising;
 
 // Address reset button
 unsigned long resetButtonTimer;
@@ -98,87 +101,92 @@ RF24 radio(CE, CS);
 
 void setup()
 {
+
+	// setDefaultEEPROMSettings(); // Use this first time you upload code
+
 	#ifdef DEBUG
 		Serial.begin(115200);
 		DEBUG_PRINT("** Esk8-remote receiver **");
-    printf_begin();
+		printf_begin();
 	#else
 		// Using RX and TX to get VESC data
-		SERIALIO.begin(115200);
+		SetSerialPort(&Serial);
+		Serial.begin(115200);
 	#endif
 
-  loadEEPROMSettings();
+	loadEEPROMSettings();
 
-  initiateReceiver();
+	initiateReceiver();
 
 	pinMode(throttlePin, OUTPUT);
-  pinMode(statusLedPin, OUTPUT);
+	pinMode(statusLedPin, OUTPUT);
 	pinMode(resetAddressPin, INPUT_PULLUP);
 
-	// Set default throttle in startup
 	analogWrite(throttlePin, defaultThrottle);
 
-  DEBUG_PRINT("Setup complete - begin listening");
+	DEBUG_PRINT("Setup complete - begin listening");
+
 }
 
 void loop()
 { 
-  /* Show status by blinking status LED */
-  statusBlink();
+	/* Begin address reset */
+	if (digitalRead(resetAddressPin) == LOW) {
+		if(resetButtonState == LOW){
+			resetButtonTimer = millis();
+		}
+		resetButtonState = HIGH;
+	}else{
+		resetButtonState = LOW;
+	}
 
-  /* Begin address reset */
-  if (digitalRead(resetAddressPin) == LOW) {
-    if(resetButtonState == LOW){
-      resetButtonTimer = millis();
-    }
+	if (resetButtonState == HIGH && (millis() - resetButtonTimer) > 5000 ) {
 
-    statusMode = RESETTING;
-    
-    resetButtonState = HIGH;
-  }else{
-    resetButtonState = LOW;
-  }
+		DEBUG_PRINT("Loading default address");
 
-  if (resetButtonState == HIGH && (millis() - resetButtonTimer) > 5000 ) {
+		// Load default address
+		rxSettings.address = defaultAddress;
+		updateEEPROMSettings(); 
 
-    DEBUG_PRINT("Loading default address");
-    
-    // Load default address
-    rxSettings.address = defaultAddress;
-    updateEEPROMSettings(); 
-    
-    // Reinitiate the recevier module
-    initiateReceiver();
-    
-    resetButtonTimer = millis();
-  }
-  /* End address reset */
+		// Reinitiate the recevier module
+		initiateReceiver();
+
+		statusBlink(COMPLETE);
+
+		resetButtonTimer = millis();
+	}
+	/* End address reset */
 
 	/* Begin listen for transmission */
 	while (radio.available())
 	{
 		// Read and store the received package
 		radio.read( &remPackage, sizeof(remPackage) );
-    DEBUG_PRINT( uint64ToAddress(rxSettings.address) + " - New package: '" + (String)remPackage.type + "-" + (String)remPackage.throttle + "-" + (String)remPackage.trigger + "'" );
+		DEBUG_PRINT( uint64ToAddress(rxSettings.address) + " - New package: '" + (String)remPackage.type + "-" + (String)remPackage.throttle + "-" + (String)remPackage.trigger + "'" );
 
 		if( remPackage.type <= 2 ){
 			timeoutTimer = millis();
 			recievedData = true;
 		}
 	}
-  /* End listen for transmission */
+	/* End listen for transmission */
 
 	/* Begin data handling */
 	if(recievedData == true){
 
-    statusMode = CONNECTED;
+		statusBlink(CONNECTED);
 
 		if ( remPackage.type == NORMAL ) {
+
 			// Normal package
-			updateThrottle( remPackage.throttle );
+			controlThrottle( remPackage.throttle, remPackage.trigger );
 			
 			if( rxSettings.controlMode != 0 ){
-				getUartData();
+				#ifdef DEBUG
+					DEBUG_PRINT("Getting VESC data");
+				#else
+					getUartData();
+				#endif
 			}
 
 			// The next time a transmission is received, the returnData will be sent back in acknowledgement 
@@ -187,59 +195,97 @@ void loop()
 		} else if ( remPackage.type == SETTING ) {
 
 			// Next package will be a change of setting
-			statusMode = UPDATING;
-      
 			acquireSetting();
+
 		}
 	
 		recievedData = false;
 	}
-  /* End data handling */
+	/* End data handling */
 
-  /* Begin timeout handling */
+	/* Begin timeout handling */
 	if ( timeoutMax <= ( millis() - timeoutTimer ) )
 	{
-	  // No speed is received within the timeout limit.
-    statusMode = TIMEOUT;
-		updateThrottle( defaultThrottle );
+		// No speed is received within the timeout limit.
+		statusBlink(TIMEOUT);
+		controlThrottle( defaultThrottle, false );
 		timeoutTimer = millis();
 
-    DEBUG_PRINT( uint64ToAddress(rxSettings.address) + " - Timeout");
+		DEBUG_PRINT( uint64ToAddress(rxSettings.address) + " - Timeout");
 	}
-  /* End timeout handling */
+	/* End timeout handling */
 }
 
-void statusBlink(){
-  int ontime, offtime;
+void statusBlink(uint8_t statusCode){
+	
+	short ontime, offtime;
 
-  switch(statusMode){
-    case CONNECTED:
-      ontime = 1000; offtime = 200;
-    break;
+	switch(statusCode){
+		case CONNECTED:
+			ontime = 500; offtime = 0;
+		break;
 
-    case TIMEOUT:
-      ontime = 200; offtime = 800;
-    break;
+		case TIMEOUT:
+			ontime = 300; offtime = 300;
+		break;
 
-    case UPDATING:
-      ontime = 500; offtime = 500;
-    break;
+		case COMPLETE:
+			ontime = 50; offtime = 50;
 
-    case RESETTING:
-      ontime = 200; offtime = 200;
-    break;
-  }
+			for(uint8_t i = 0; i < 6; i++){
+				digitalWrite(statusLedPin, statusBlinkFlag);
+				statusBlinkFlag = !statusBlinkFlag;
 
-  if ((millis() - lastStatusBlink) > offtime && statusBlinkFlag == LOW) {
-    statusBlinkFlag = HIGH;
-    lastStatusBlink = millis();
-  }
-  else if ((millis() - lastStatusBlink) > ontime && statusBlinkFlag == HIGH) {
-    statusBlinkFlag = LOW;
-    lastStatusBlink = millis();
-  }
+				if(statusBlinkFlag){
+					delay(ontime);
+				}else{
+					delay(offtime);  
+				}
+			}
 
-  digitalWrite(statusLedPin, statusBlinkFlag);
+			statusBlinkFlag = LOW;
+
+			return;
+
+		break;
+
+		case FAILED:
+			ontime = 500; offtime = 200;
+
+			digitalWrite(statusLedPin, LOW);
+
+			delay(1000);
+
+			for(uint8_t i = 0; i < 6; i++){
+				digitalWrite(statusLedPin, statusBlinkFlag);
+				statusBlinkFlag = !statusBlinkFlag;
+
+				if(statusBlinkFlag){
+					delay(ontime);
+				}else{
+					delay(offtime);  
+				}
+			}
+
+			statusBlinkFlag = LOW;
+
+			return;
+		break;
+	}
+
+	if ((millis() - lastStatusBlink) > offtime && statusBlinkFlag == LOW) {
+		statusBlinkFlag = HIGH;
+		lastStatusBlink = millis();
+	}
+	else if ((millis() - lastStatusBlink) > ontime && statusBlinkFlag == HIGH) {
+		statusBlinkFlag = LOW;
+		lastStatusBlink = millis();
+	}
+	if ( offtime == 0 ){
+		statusBlinkFlag = HIGH;  
+	}
+
+	digitalWrite(statusLedPin, statusBlinkFlag);
 }
 
 void acquireSetting(){
@@ -293,15 +339,20 @@ void acquireSetting(){
 		if( receivedConfirm == true ){
 			updateSetting(setPackage.setting, value);
 			DEBUG_PRINT("Updated setting.");
+			
+			statusBlink(COMPLETE);
 		}
 
-		delay(500);
+		delay(200);
 	}
 
 	if (receivedSetting == false || receivedConfirm == false)
 	{
 		DEBUG_PRINT("Failed! Clearing receiver buffer");
-		delay(500);
+
+		statusBlink(FAILED);
+
+		delay(200);
 		while (radio.available())
 		{
 			radio.read( &setPackage, sizeof(setPackage) );
@@ -313,14 +364,14 @@ void acquireSetting(){
 void initiateReceiver(){
 
 	radio.begin();
-	// radio.setChannel(defaultChannel);
+	radio.setChannel(defaultChannel);
 	radio.enableAckPayload();
 	radio.enableDynamicPayloads();
 	radio.openReadingPipe(1, rxSettings.address);
 	radio.startListening();
 
 	#ifdef DEBUG
-    DEBUG_PRINT("Printing receiver details");
+		DEBUG_PRINT("Printing receiver details");
 		radio.printDetails();
 	#endif
 
@@ -337,56 +388,106 @@ void updateSetting( uint8_t setting, uint64_t value)
 	}
 	
 	setSettingValue( setting, value);
-  updateEEPROMSettings(); 
-  
+	
+	updateEEPROMSettings(); 
+
 	// The address has changed, we need to reinitiate the receiver module
 	if(setting == 2) {
 		initiateReceiver(); 
 	}
 }
 
-void updateThrottle( uint8_t throttle )
+void setThrottle( uint8_t throttle )
 {
-	switch ( rxSettings.controlMode )
+	analogWrite(throttlePin, throttle);
+}
+
+void controlThrottle( uint8_t throttle , bool trigger )
+{
+	// Kill switch
+	if( rxSettings.triggerMode == 0)
 	{
-		// PPM
-		case 0:
-			// Write the PWM signal to the ESC (0-255).
-    		analogWrite(throttlePin, throttle);
-		break;
+		DEBUG_PRINT("Killswitch");
+		if ( trigger == false || throttle < 127 )
+		{
+			setThrottle( throttle );
+		}
+		else
+		{
+			setThrottle( defaultThrottle );
+		}
+	}
 
-		// PPM and UART
-		case 1: 
-			// Write the PWM signal to the ESC (0-255).
-    		analogWrite(throttlePin, throttle);
-		break;
+	// Cruise control
+	else if( rxSettings.triggerMode == 1)
+	{ 
+		if( trigger == true )
+		{
 
-		 // UART
-		case 2:
-			// Update throttle with UART
-		break;
+			// If control mode is PPM only
+			if( rxSettings.controlMode == 0){
+				// Keep current PPM value until trigger is released
+				if(cruising == false){
+					cruiseThrottle = throttle;
+					cruising = true;
+				}
+				
+			}else{
+
+				if(cruising == false){
+					cruiseRPM = returnData.rpm;
+					cruiseThrottle = throttle;
+					cruising = true;
+				}
+
+				// While cruise control is active, try to achieve the same ERPM as just measured
+
+				if( lastRPM != returnData.rpm && returnData.rpm != 0) {
+
+					if( returnData.rpm < cruiseRPM ){
+						cruiseThrottle += 5;
+					}else if ( returnData.rpm > cruiseRPM ){
+						cruiseThrottle -= 5;
+					}
+				}
+
+				lastRPM = returnData.rpm;
+
+			}
+
+			setThrottle( cruiseThrottle );
+
+			#ifdef DEBUG
+				DEBUG_PRINT( "Cruise control throttle: " + (String)cruisePPM );
+			#endif
+		}
+		else
+		{
+			setThrottle( throttle );
+			cruising = false;
+		}
 	}
 } 
 
 void getUartData()
 {
-	if ( millis() - lastUartPull >= 250 ) {
+	if ( millis() - lastUartPull >= 200 ) {
 
 		lastUartPull = millis();
 
 		// Only get what we need
 		if ( VescUartGetValue(uartData) )
 		{
-			returnData.ampHours 		  = uartData.ampHours;
-			returnData.inpVoltage 	  = uartData.inpVoltage;
-			returnData.rpm 				    = uartData.rpm;
+			returnData.ampHours 		= uartData.ampHours;
+			returnData.inpVoltage		= uartData.inpVoltage;
+			returnData.rpm 				= uartData.rpm;
 			returnData.tachometerAbs 	= uartData.tachometerAbs;
 		} 
 		else
 		{
-			returnData.ampHours 		  = 0.0;
+			returnData.ampHours 		= 0.0;
 			returnData.inpVoltage 		= 0.0;
-			returnData.rpm 				    = 0;
+			returnData.rpm 				= 0;
 			returnData.tachometerAbs 	= 0;
 		}
 	}
@@ -416,7 +517,7 @@ String uint64ToAddress(uint64_t number)
 
 void setDefaultEEPROMSettings()
 {
-  DEBUG_PRINT("Loading default settings.");
+	DEBUG_PRINT("Loading default settings.");
 	for (int i = 0; i < numOfSettings; i++) {
 		setSettingValue(i, settingRules[i][0]);
 	}
@@ -453,7 +554,7 @@ void loadEEPROMSettings()
 		updateEEPROMSettings();
 	}
 
-  DEBUG_PRINT("Settings loaded");
+	DEBUG_PRINT("Settings loaded");
 }
 
 // Write settings to the EEPROM
