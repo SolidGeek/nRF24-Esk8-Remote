@@ -8,6 +8,8 @@ I have made a Wiki here on Github, with a few tips and guides on how to build th
 
 Donation link: https://www.paypal.me/solidgeek
 
+**Important**: This remote is still in development, and is far from perfect. Stay safe, and remember to wear protective gear!
+
 ## Update v2.0
 
 Update 2.0 introduces quite a few new interesting features to the remote, and fixes some minor issues from the past. The update includes:
@@ -22,4 +24,3 @@ Update 2.0 introduces quite a few new interesting features to the remote, and fi
 To-do:
 * UART throttle control
 * Introducing cruise control
-
