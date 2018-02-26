@@ -20,6 +20,6 @@ Youtube video available at https://www.youtube.com/watch?v=gQl7mLMAiAs&feature=y
 
 Part List available at https://docs.google.com/spreadsheets/d/1vXR9ce0m25Ap6XxzlymFo_pfpIeT2RAqWCypW-a-Jes/edit?usp=sharing
 
-Eagle Files available at (to be uploaded)
+PCB Files available at https://easyeda.com/ervinelin/New_Project-35f7bf3537744cda8e1064904f6a78a5
 
 More info available at (to be updated)
