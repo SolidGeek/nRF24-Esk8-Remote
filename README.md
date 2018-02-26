@@ -15,7 +15,11 @@ The remote I designed has the following features:
 - Hall sensor instead of potentiometer to prevent potential wear of a pot
 
 STLs available at https://www.thingiverse.com/thing:2800544
+
 Youtube video available at https://www.youtube.com/watch?v=gQl7mLMAiAs&feature=youtu.be
+
 Part List available at https://docs.google.com/spreadsheets/d/1vXR9ce0m25Ap6XxzlymFo_pfpIeT2RAqWCypW-a-Jes/edit?usp=sharing
+
 Eagle Files available at (to be uploaded)
+
 More info available at (to be updated)
