@@ -6,10 +6,10 @@
 //#define DEBUG
 
 #ifdef DEBUG
-  #define DEBUG_PRINT(x)  Serial.println (x)
-  #include "printf.h"
+#define DEBUG_PRINT(x)  Serial.println (x)
+#include "printf.h"
 #else
-  #define DEBUG_PRINT(x)
+#define DEBUG_PRINT(x)
 #endif
 
 #define SERIALIO Serial
@@ -48,6 +48,7 @@ uint32_t lastTimeReceived = 0;
 int motorSpeed = 127;
 int timeoutMax = 500;
 int throttlePin = 5;
+//int resetTrigger = 0;
 
 struct bldcMeasure measuredValues;
 
@@ -56,13 +57,13 @@ unsigned long lastDataCheck;
 
 void setup() {
 
-    SetSerialPort(&SERIALIO);
-    SERIALIO.begin(115200);
+  SetSerialPort(&SERIALIO);
+  SERIALIO.begin(115200);
 
-    initiateReceiver();
+  pinMode(throttlePin, OUTPUT);
+  analogWrite(throttlePin, motorSpeed);
 
-    pinMode(throttlePin, OUTPUT);
-    analogWrite(throttlePin, motorSpeed);
+  initiateReceiver();
 }
 
 void loop() {
@@ -101,14 +102,14 @@ void loop() {
 }
 
 
-void initiateReceiver(){
+void initiateReceiver() {
 
-    radio.begin();
-    // radio.setChannel(defaultChannel);
-    radio.enableAckPayload();
-    radio.enableDynamicPayloads();
-    radio.openReadingPipe(1, pipe);
-    radio.startListening();
+  radio.begin();
+  // radio.setChannel(defaultChannel);
+  radio.enableAckPayload();
+  radio.enableDynamicPayloads();
+  radio.openReadingPipe(1, pipe);
+  radio.startListening();
 
 }
 
@@ -126,7 +127,7 @@ void getVescData() {
       data.rpm              = uartData.rpm;
       data.tachometerAbs    = uartData.tachometerAbs;
       data.avgMotorCurrent  = uartData.avgMotorCurrent;
-    } 
+    }
     else
     {
       data.ampHours       = 0.0;
