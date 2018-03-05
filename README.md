@@ -22,4 +22,7 @@ Part List available at https://docs.google.com/spreadsheets/d/1vXR9ce0m25Ap6Xxzl
 
 PCB Files available at https://easyeda.com/ervinelin/New_Project-35f7bf3537744cda8e1064904f6a78a5
 
-More info available at (to be updated)
+You will need to have intermediate soldering skills to complete the build as well as knowledge on how to program an Arduino and adjust simple code. Of course if you print this yourself you will need to know how to 3D print.
+
+Caveats:
+Remote is experimental and not an off the shelf product that has undergone proper testing. Build and use at your own risk. Please bench test extensively before actual use. Lastly, I highly recommend protective gear when using the remote just in case something doesn't work (many many things can go wrong)
