@@ -22,6 +22,10 @@ Part List available at https://docs.google.com/spreadsheets/d/1vXR9ce0m25Ap6Xxzl
 
 PCB Files available at https://easyeda.com/ervinelin/New_Project-35f7bf3537744cda8e1064904f6a78a5
 
+Forum discussion available at https://www.electric-skateboard.builders/t/diy-trigger-style-remote-with-telemetry-complete-guide/48231
+
+Build guide available at https://github.com/ModMiniMan/nRF24-Esk8-Remote/wiki
+
 You will need to have intermediate soldering skills to complete the build as well as knowledge on how to program an Arduino and adjust simple code. Of course if you print this yourself you will need to know how to 3D print.
 
 Caveats:
