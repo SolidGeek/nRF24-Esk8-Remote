@@ -3,7 +3,6 @@
 #include <SPI.h>
 #include <EEPROM.h>
 #include "RF24.h"
-#include "VescUart.h"
 
 #define DEBUG
 
@@ -47,20 +46,20 @@ struct callback {
 	float inpVoltage;
 	long rpm;
 	long tachometerAbs;
-};
+} returnData;
 
 // Transmit and receive package
-struct package {		// | Normal    | Setting 	| Dummy
-	uint8_t type;		  // | 0         | 1			| 2
-	uint8_t throttle;	// | Throttle  |         	| 
-	uint8_t trigger;	// | Trigger   |        	| 
-};
+struct package {		// | Normal 	| Setting 	| Dummy
+	uint8_t type;		// | 0 			| 1			| 2
+	uint8_t throttle;	// | Throttle 	| 			| 
+	uint8_t trigger;	// | Trigger 	| 			| 
+} remPackage;
 
 // Define package to transmit settings
 struct settingPackage {
 	uint8_t setting;
 	uint64_t value; 
-};
+} setPackage;
 
 // Defining struct to hold stats 
 struct stats {
@@ -72,21 +71,27 @@ struct stats {
 
 // Defining struct to hold setting values while remote is turned on.
 struct settings {
-	uint8_t triggerMode;
-	uint8_t batteryType;
-	uint8_t batteryCells;
-	uint8_t motorPoles;
-	uint8_t motorPulley;
-	uint8_t wheelPulley;
-	uint8_t wheelDiameter;
-	uint8_t controlMode;
-	int minHallValue;
-	int centerHallValue;
-	int maxHallValue;
-	uint64_t address;
-};
+	uint8_t triggerMode; 	// 0
+	uint8_t batteryType; 	// 1
+	uint8_t batteryCells; 	// 2
+	uint8_t motorPoles;		// 3
+	uint8_t motorPulley;	// 4
+	uint8_t wheelPulley; 	// 5
+	uint8_t wheelDiameter;	// 6
+	uint8_t controlMode; 	// 7
+	short minHallValue; 		// 8
+	short centerHallValue;	// 9
+	short maxHallValue; 		// 10
+	uint64_t address; 		// 11
+} txSettings;
 
-// Defining variables for speed and distance calculation
+// Defining constants to hold the special settings, so it's easy changed thoughout the code
+#define TRIGGER 0
+#define MODE    7
+#define ADDRESS 11
+#define RESET 12
+
+// Defining variables to hold values for speed and distance calculation
 float gearRatio;
 float ratioRpmSpeed;
 float ratioPulseDistance;
@@ -95,37 +100,47 @@ uint8_t currentSetting = 0;
 const uint8_t numOfSettings = 13;
 
 // Setting rules format: default, min, max.
-const short settingRules[numOfSettings][3] {
-	{0, 0, 1}, // 0: Killswitch or 1: cruise
-	{0, 0, 1}, // 0 Li-ion & 1 LiPo
-	{10, 0, 12},
-	{14, 0, 250},
-	{15, 0, 250},
-	{40, 0, 250},
-	{83, 0, 250},
-	{1, 0, 2}, // 0: PPM only, 1: PPM and UART  or 2: UART only
-	{0, 0, 1023},
-	{512, 0, 1023},
-	{1023, 0, 1023},
-	{-1, 0, 0}, // No validation for pipe address (not really possible this way)
-  {-1, 0, 0} // No validation for default address 
+const short rules[numOfSettings][3] {
+	{0, 0, 1}, 		// 0: Killswitch 	| 1: Cruise control
+	{0, 0, 1}, 		// 0: Li-ion 		| 1: LiPo
+	{10, 0, 12},	// Cell count
+	{10, 0, 12},	// Motor poles
+	{14, 0, 250},	// Motor pully
+	{40, 0, 250},	// Wheel pulley
+	{83, 0, 250},	// Wheel diameter
+	{1, 0, 1}, 		// 0: PPM only or 1: PPM and UART
+	{200, 0, 1023},	// Min hall value
+	{500, 0, 1023},	// Center hall value
+	{800, 0, 1023},	// Max hall value
+	{-1, 0, 0}, 	  // Address
+	{-1, 0, 0} 	    // Set default address
 };
 
-// Defining constants to hold the special settings, so it's easy changed thoughout the code
-#define TRIGGER 0
-#define MODE    7
-#define ADDRESS 11
-#define RESET 12
+const char titles[numOfSettings][17] = {
+  "Trigger use", "Battery type", "Battery cells", "Motor poles", "Motor pulley",
+  "Wheel pulley", "Wheel diameter", "Control mode", "Throttle min", "Throttle center",
+  "Throttle max", "Generate address", "Reset address"
+};
 
-struct callback returnData;
-struct package remPackage;
-struct settingPackage setPackage;
-struct settings txSettings;
+const uint8_t unitIdentifier[numOfSettings]  = {0,0,1,0,2,2,3,0,0,0,0,0,0};
+const uint8_t valueIdentifier[numOfSettings] = {1,2,0,0,0,0,0,3,0,0,0,0,0};
+
+const char stringValues[3][2][13] = {
+  {"Killswitch", "Cruise"},
+  {"Li-ion", "LiPo"},
+  {"PPM", "PPM and UART"},
+};
+
+const char settingUnits[3][3] = {"S", "T", "mm"};
+const char dataSuffix[3][4] = {"KMH", "KM", "%"};
+const char dataPrefix[3][9] = {"SPEED", "DISTANCE", "BATTERY"};
 
 // Pin defination
 const uint8_t triggerPin = 4;
 const uint8_t batteryMeasurePin = A2;
 const uint8_t hallSensorPin = A3;
+const uint8_t CE = 9;
+const uint8_t CS = 10;
 
 // Battery monitering
 const float minVoltage = 3.2;
@@ -145,33 +160,40 @@ bool connected = false;
 short failCount;
 
 // Defining variables for OLED display
-String tempString;
+String tString;
 uint8_t displayData = 0;
 unsigned long lastSignalBlink;
 unsigned long lastDataRotation;
 
 // Instantiating RF24 object for NRF24 communication
-RF24 radio(7, 8); // REMEMBER TO CHANGE TO 9 and 10 !!!!!!!!
+RF24 radio(CE, CS);
 
 // Defining variables for Settings menu
 bool changeSettings = false;
-bool changeSelectedSetting = false;
+bool changeThisSetting = false;
 
 bool settingsLoopFlag = false;
 bool settingsChangeFlag = false;
 bool settingsChangeValueFlag = false;
+unsigned short settingWaitDelay = 500;
 
 bool signalBlink = false;
 
 
+// Used to set position of graphics
+uint8_t x, y;
+
 void setup() {
+
+  setDefaultEEPROMSettings();
  
 	#ifdef DEBUG
 		Serial.begin(9600);
-    printf_begin();
+    while (!Serial){};
+		printf_begin();
 	#endif
 
-  loadEEPROMSettings();
+	loadEEPROMSettings();
 	
 	pinMode(triggerPin, INPUT_PULLUP);
 	pinMode(hallSensorPin, INPUT);
@@ -182,16 +204,18 @@ void setup() {
 
 	if (triggerActive()) {
 		changeSettings = true;
-		drawTitleScreen(F("Remote Settings"));
+		drawTitleScreen("Settings");
 	}
 
 	// Start radio communication
 	initiateTransmitter();
-  
+
+  delay(500);
+
 }
 
 void loop() {
-  
+
 	calculateThrottlePosition();
 
 	if (changeSettings == true) {
@@ -200,11 +224,11 @@ void loop() {
 	}
 	else
 	{
-    // Normal transmission. The state of the trigger is handled by the receiver. 
-    remPackage.type = 0;
-    remPackage.trigger = triggerActive();
-    remPackage.throttle = throttle;
-		
+		// Normal transmission. The state of the trigger, cruise and throttle is handled by the receiver. 
+		remPackage.type = 0;
+		remPackage.trigger = triggerActive();
+		remPackage.throttle = throttle;
+
 		// Transmit to receiver
 		transmitToReceiver();
 	}
@@ -219,11 +243,11 @@ void controlSettingsMenu() {
 	// If thumbwheel is in top position
 	if (hallValue >= (txSettings.centerHallValue + hallMenuMargin) && settingsLoopFlag == false) {
 		// Up
-		if (changeSelectedSetting == true) {
-			if(settingRules[currentSetting][0] != -1){
+		if (changeThisSetting == true) {
+			if(rules[currentSetting][0] != -1){
 				short val = getSettingValue(currentSetting) + 1;
 				
-				if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
+				if (inRange(val, rules[currentSetting][1], rules[currentSetting][2])) {
 					setSettingValue(currentSetting, val);
 					settingsLoopFlag = true;
 				}
@@ -239,12 +263,12 @@ void controlSettingsMenu() {
 	// If thumbwheel is in bottom position
 	else if (hallValue <= (txSettings.centerHallValue - hallMenuMargin) && settingsLoopFlag == false) {
 		// Down
-		if (changeSelectedSetting == true) {
+		if (changeThisSetting == true) {
 
-			if(settingRules[currentSetting][0] != -1){
+			if(rules[currentSetting][0] != -1){
 				short val = getSettingValue(currentSetting) - 1;
 	
-				if (inRange(val, settingRules[currentSetting][1], settingRules[currentSetting][2])) {
+				if (inRange(val, rules[currentSetting][1], rules[currentSetting][2])) {
 					setSettingValue(currentSetting, val);
 					settingsLoopFlag = true;
 				}
@@ -264,48 +288,55 @@ void controlSettingsMenu() {
 	}
 
 	// Update selected setting to the new value 
-	if ( triggerActive() ) {
+	if ( triggerActive() )
+	{
+		if(settingsChangeFlag == false)
+		{
+			// Save settings to EEPROM
+			if (changeThisSetting == true)
+			{
+				// Settings that needs to be transmitted to the recevier
+				if( currentSetting == TRIGGER || currentSetting == MODE ){
+					if( ! transmitSetting( currentSetting, getSettingValue(currentSetting) ) ){
+						// Error! Load the old setting
+						loadEEPROMSettings();
+					}
+				}
 
-    if(settingsChangeFlag == false){
-      // Save settings to EEPROM
-      if (changeSelectedSetting == true) {
-        
-        // Settings that need's to be transmitted to the recevier
-        if( currentSetting == TRIGGER || currentSetting == MODE ){
-          if( ! transmitSetting( currentSetting, getSettingValue(currentSetting) ) ){
-            // Error! Load the old setting
-            loadEEPROMSettings();
-          }
-        }
-       
-        // If new address is choosen
-        else if ( currentSetting == ADDRESS ){
-          // Generate new address
-          uint64_t address = generateAddress();
-  
-          if( transmitSetting( currentSetting, address ) ){
-            setSettingValue(currentSetting, address);
-            initiateTransmitter();
-          }else{
-            // Error! Load the old address
-            loadEEPROMSettings();
-          }
-        }
-  
-        // If we want to use the default address again
-        else if ( currentSetting == RESET ){
-          // Generate new address
-          setSettingValue( ADDRESS, defaultAddress );
-        }
-       
-        updateEEPROMSettings();
-      }
-  
-      changeSelectedSetting = !changeSelectedSetting;
-      settingsChangeFlag = true;
-    }
-	
-	} else {
+				// If new address is choosen
+				else if ( currentSetting == ADDRESS )
+				{
+					// Generate new address
+					uint64_t address = generateAddress();
+
+					if( transmitSetting( currentSetting, address ) )
+					{
+						setSettingValue(currentSetting, address);
+						initiateTransmitter();
+					}
+					else
+					{
+						// Error! Load the old address
+						loadEEPROMSettings();
+					}
+				}
+
+				// If we want to use the default address again
+				else if ( currentSetting == RESET )
+				{
+					// Generate new address
+					setSettingValue( ADDRESS, defaultAddress );
+				}
+
+				updateEEPROMSettings();
+			}
+		  
+			changeThisSetting = !changeThisSetting;
+			settingsChangeFlag = true;
+	    }
+	} 
+	else 
+	{
 		settingsChangeFlag = false;
 	}
 }
@@ -313,7 +344,7 @@ void controlSettingsMenu() {
 void setDefaultEEPROMSettings() {
 	for ( uint8_t i = 0; i < numOfSettings; i++ )
 	{
-		setSettingValue( i, settingRules[i][0] );
+		setSettingValue( i, rules[i][0] );
 	}
 
 	txSettings.address = defaultAddress;
@@ -330,14 +361,14 @@ void loadEEPROMSettings() {
 	for (uint8_t i = 0; i < numOfSettings; i++) {	
 
 		// If setting default value is -1, don't check if its valid
-		if( settingRules[i][0] != -1 ){
+		if( rules[i][0] != -1 ){
 
-      short val = getSettingValue(i);
-    
-			if (! inRange(val, settingRules[i][1], settingRules[i][2])) {
+			short val = getSettingValue(i);
+		
+			if (! inRange(val, rules[i][1], rules[i][2])) {
 				// Setting is damaged or never written. Rewrite default.
 				rewriteSettings = true;
-				setSettingValue(i, settingRules[i][0] );
+				setSettingValue(i, rules[i][0] );
 			}
 		}
 	}
@@ -370,17 +401,17 @@ void calculateRatios() {
 short getSettingValue(uint8_t index) {
 	short value;
 	switch (index) {
-		case TRIGGER: value = txSettings.triggerMode;     break;
-		case 1:       value = txSettings.batteryType;     break;
-		case 2:       value = txSettings.batteryCells;    break;
-		case 3:       value = txSettings.motorPoles;      break;
-		case 4:       value = txSettings.motorPulley;     break;
-		case 5:       value = txSettings.wheelPulley;     break;
-		case 6:       value = txSettings.wheelDiameter;   break;
-		case MODE:    value = txSettings.controlMode;     break;
-		case 8:       value = txSettings.minHallValue;    break;
-		case 9:       value = txSettings.centerHallValue; break;
-		case 10:      value = txSettings.maxHallValue;    break;
+		case TRIGGER: 	value = txSettings.triggerMode; break;
+		case 1: 		value = txSettings.batteryType; 	  break;
+		case 2: 		value = txSettings.batteryCells; 	  break;
+		case 3: 		value = txSettings.motorPoles; 		  break;
+		case 4: 		value = txSettings.motorPulley; 	  break;
+		case 5: 		value = txSettings.wheelPulley; 	  break;
+		case 6: 		value = txSettings.wheelDiameter; 	break;
+		case MODE:  value = txSettings.controlMode; 	  break;
+		case 8: 		value = txSettings.minHallValue; 	  break;
+		case 9: 		value = txSettings.centerHallValue; break;
+		case 10: 		value = txSettings.maxHallValue; 	  break;
 	}
 	return value;
 }
@@ -388,18 +419,20 @@ short getSettingValue(uint8_t index) {
 // Set a value of a specific setting by index.
 void setSettingValue(uint8_t index, uint64_t value) {
 	switch (index) {
-		case TRIGGER: txSettings.triggerMode = value;		  break;
-		case 1:       txSettings.batteryType = value;		  break;
-		case 2:       txSettings.batteryCells = value;	  break;
-		case 3:       txSettings.motorPoles = value;		  break;
-		case 4:       txSettings.motorPulley = value;		  break;
-		case 5:       txSettings.wheelPulley = value;		  break;
-		case 6:       txSettings.wheelDiameter = value;	  break;
-		case MODE:    txSettings.controlMode = value;			break;
-		case 8:       txSettings.minHallValue = value;	  break;
-		case 9:       txSettings.centerHallValue = value;	break;
-		case 10:      txSettings.maxHallValue = value;	  break;
-		case ADDRESS: txSettings.address = value;		      break;
+		case TRIGGER: 	txSettings.triggerMode = value; 	  break;
+		case 1: 		    txSettings.batteryType = value; 	  break;
+		case 2: 		    txSettings.batteryCells = value; 	  break;
+		case 3: 		    txSettings.motorPoles = value; 		  break;
+		case 4: 		    txSettings.motorPulley = value; 	  break;
+		case 5: 		    txSettings.wheelPulley = value; 	  break;
+		case 6: 		    txSettings.wheelDiameter = value;	  break;
+		case MODE: 		  txSettings.controlMode = value; 	  break;
+		case 8: 		    txSettings.minHallValue = value; 	  break;
+		case 9: 		    txSettings.centerHallValue = value; break;
+		case 10: 		    txSettings.maxHallValue = value; 	  break;
+		case ADDRESS: 	txSettings.address = value; 		    break;
+
+    default: /* Do nothing */ break;
 	}
 }
 
@@ -416,34 +449,32 @@ bool triggerActive() {
 		return false;
 }
 
-// Function used to transmit the throttle value, and receive the VESC realtime data.
+// Function used to transmit the remPackage and receive auto acknowledgement.
 void transmitToReceiver(){
 	// Transmit once every 50 millisecond
 	if ( millis() - lastTransmission >= 50 ) {
 
 		lastTransmission = millis();
 
-		bool sendSuccess = false;
-		// Transmit the remPackage package
-		sendSuccess = radio.write( &remPackage, sizeof(remPackage) );
-
-		// Listen for an acknowledgement reponse (return of uart data).
-		while (radio.isAckPayloadAvailable()) {
-			radio.read( &returnData, sizeof(returnData) );
-		}
-
-		if (sendSuccess == true)
+		// Transmit the remPackage
+		if ( radio.write( &remPackage, sizeof(remPackage) ) )
 		{
+
+			// Listen for an acknowledgement reponse (return of uart data).
+			while (radio.isAckPayloadAvailable()) {
+				radio.read( &returnData, sizeof(returnData) );
+			}
+
 			// Transmission was a succes
 			failCount = 0;
-			sendSuccess = false;
 
-			DEBUG_PRINT( uint64ToAddress(txSettings.address) + F(": Transmission succes"));
+			DEBUG_PRINT( uint64ToAddress(txSettings.address) + ": Transmission succes");
 		} else {
 			// Transmission was not a succes
 			failCount++;
 
-			DEBUG_PRINT( uint64ToAddress(txSettings.address) + F(": Failed transmission"));
+			DEBUG_PRINT( uint64ToAddress(txSettings.address) +  + ": Failed transmission");
+     
 		}
 
 		// If lost more than 5 transmissions, we can assume that connection is lost.
@@ -458,77 +489,104 @@ void transmitToReceiver(){
 bool transmitSetting(uint8_t setting, uint64_t value){
   
 	uint64_t returnedValue;
+	unsigned long beginTime = millis(); 
+	bool payloadSend = false;
+	bool ackRecieved = false;
+ 
+	// Lets clear the ack-buffer (so it can be used to confirm the new setting).
+	while ( radio.isAckPayloadAvailable() && settingWaitDelay >= ( millis() - beginTime) ) {
+		radio.read( &returnData, sizeof(returnData) );
+		delay(100);
+	}
+
+	// Feed the setPackage with the new setting
+	setPackage.setting = setting;
+	setPackage.value = value;
 
 	// Tell the receiver next package will be new settings
 	remPackage.type = 1;
 
-	radio.write( &remPackage, sizeof(remPackage) );
-	DEBUG_PRINT( F("Transmitted setting remPackage") );
-	delay(100);
-
-	// Feed the settingPackage with the new setting
-	setPackage.setting = setting;
-	setPackage.value = value;
-
-	radio.write( &setPackage, sizeof(setPackage) );
-	
-  if(setting == ADDRESS){
-    DEBUG_PRINT( "Transmitted new setting: " + (String)setting + "=" + uint64ToAddress(value) );  
-  }else{
-    DEBUG_PRINT( "Transmitted new setting: " + (String)setting + "=" + uint64ToString(value) );
-  }
-	
-	delay(100);
-
-  // Lets clear the ack-buffer (so it can be used to confirm the new setting).
-  while ( radio.isAckPayloadAvailable() ) {
-    radio.read( &returnData, sizeof(returnData) );
-    DEBUG_PRINT( F("Cleared buffer") );
-  }
+	beginTime = millis(); 
   
-  delay(100);
-
-	// Write dummy package to receive auto ack
-	remPackage.type = 2; 
-	radio.write( &remPackage, sizeof(remPackage) );
-	DEBUG_PRINT( F("Transmitted dummy package") );
-  
-	delay(250);
-
-	while ( radio.isAckPayloadAvailable() )
-	{
-		radio.read( &returnedValue, sizeof(returnedValue));
-
-    if(setting == ADDRESS){
-      DEBUG_PRINT( "Received auto ack: " + uint64ToAddress(returnedValue) );  
-    }else{
-      DEBUG_PRINT( "Received auto ack: " + uint64ToString(returnedValue) );
-    }
+	while ( !payloadSend && settingWaitDelay >= (millis() - beginTime) ){
+		if( radio.write( &remPackage, sizeof(remPackage)) ){
+			payloadSend = true;
+		}
 	}
 
-	if(returnedValue == value){
-    DEBUG_PRINT( F("Setting updated on receiver") );
-		return true;
+	// ** Begin transmitting new setting **
+
+	if(payloadSend == true){
+
+		DEBUG_PRINT( F("TX --> New setting") );
+
+		// Transmit setPackage to receiver
+		beginTime = millis(); 
+
+		while ( !ackRecieved && settingWaitDelay >= ( millis() - beginTime) ){
+			// Write setPackage until an acknowledgement is received (or timeout is reached)
+			if( radio.write( &setPackage, sizeof(setPackage) ) ){
+
+				delay(100);
+
+				while( radio.isAckPayloadAvailable() && !ackRecieved ){
+					DEBUG_PRINT( F("TX <-- Acknowledgement") );
+					radio.read( &setPackage, sizeof(setPackage) );
+					ackRecieved = true;
+				}
+			}
+		}
 	}
 
-  DEBUG_PRINT( F("Transmitting settings failed") );
-  
+
+	// Check if the receiver Acknowledgement data is matching
+	if( ackRecieved && setPackage.setting == setting && setPackage.value == value ){
+
+    DEBUG_PRINT( F("Setting confirmed") );
+		payloadSend = false;
+
+    // Wait a little
+    delay(500);
+
+		// Send confirmation to the receiver
+		beginTime = millis(); 
+
+		while ( !payloadSend && settingWaitDelay >= (millis() - beginTime) ){
+
+			remPackage.type = 2;
+
+			if(radio.write( &remPackage, sizeof(remPackage))){
+				payloadSend = true;
+				DEBUG_PRINT( F("TX --> Confirmation") );
+			}
+
+			delay(100);
+		}
+
+		if( payloadSend == true) {
+			// Success
+			DEBUG_PRINT( F("Setting done") );
+			return true;
+		}
+	}
+
 	return false;
+
 }
 
 void initiateTransmitter(){
-  
-  radio.begin();
-  // radio.setChannel(defaultChannel);
-  radio.setPALevel(RF24_PA_MAX);
-  radio.enableAckPayload();
-  radio.enableDynamicPayloads();
-  radio.openWritingPipe( txSettings.address );
 
-  #ifdef DEBUG
-    radio.printDetails();
-  #endif
-  
+	radio.begin();
+	radio.setChannel(defaultChannel);
+	radio.setPALevel(RF24_PA_MAX);
+	radio.enableAckPayload();
+	radio.enableDynamicPayloads();
+	radio.openWritingPipe( txSettings.address );
+
+	#ifdef DEBUG
+	radio.printDetails();
+	#endif
+
 }
 
 void updateMainDisplay()
@@ -554,6 +612,7 @@ void calculateThrottlePosition()
 {
 	// Hall sensor reading can be noisy, lets make an average reading.
 	unsigned short total = 0;
+
 	for ( uint8_t i = 0; i < 10; i++ )
 	{
 		total += analogRead(hallSensorPin);
@@ -577,7 +636,14 @@ void calculateThrottlePosition()
 
 // Function used to indicate the remotes battery level.
 uint8_t batteryLevel() {
-	float voltage = batteryVoltage();
+
+  unsigned short total = 0;
+
+  for (uint8_t i = 0; i < 10; i++) {
+    total += analogRead(batteryMeasurePin);
+  }
+
+	float voltage = (refVoltage / 1024.0) * ((float)total / 10.0);
 
 	if (voltage <= minVoltage) {
 		return 0;
@@ -588,123 +654,92 @@ uint8_t batteryLevel() {
 	}
 }
 
-// Function to calculate and return the remotes battery voltage.
-float batteryVoltage()
-{
-	float batteryVoltage = 0.0;
-	unsigned short total = 0;
+float batteryPackPercentage( float voltage ){
 
-	for (uint8_t i = 0; i < 10; i++) {
-		total += analogRead(batteryMeasurePin);
+	float maxCellVoltage = 4.2;
+	float minCellVoltage;
+
+	if(txSettings.batteryType == 0){
+		// Li-ion
+		minCellVoltage = 2.8; 
+	}
+	else
+	{
+		// Li-po
+		minCellVoltage = 3.4;
 	}
 
-	batteryVoltage = (refVoltage / 1024.0) * ((float)total / 10.0);
+	float percentage = (100 - ( (maxCellVoltage * txSettings.batteryCells - voltage)/((maxCellVoltage - minCellVoltage)*10) ) * 100);
 
-	return batteryVoltage;
-}
-
-// To save precious SRAM we define function to get the setting titles
-String getSettingTitle(uint8_t index){
-	String title;
-	
-	switch(index){
-		case 0: title = "Trigger use"; 		break;
-		case 1: title = "Battery type"; 	break;
-		case 2: title = "Battery cells"; 	break;
-		case 3: title = "Motor poles"; 		break;
-		case 4: title = "Motor pulley"; 	break;
-		case 5: title = "Wheel pulley"; 	break;
-		case 6: title = "Wheel diameter"; 	break;
-		case 7: title = "Control mode"; 		break;
-		case 8: title = "Throttle min"; 	  break;
-		case 9: title = "Throttle center"; 	break;
-		case 10: title = "Throttle max"; 	    break;
-		case ADDRESS: title = "Generate address";  break;
-    case RESET: title = "Reset address";     break;
+	if(percentage > 100.0){
+		return 100.0;  
+	}else if (percentage < 0.0){
+		return 0.0;
+	}else{
+		return percentage;
 	}
-
-	return title;
 }
 
 void drawSettingsMenu() {
-	// To save SRAM we define strings local only to be used then changing settings
-	String settingValues[3][3] = {
-		{"Killswitch", "Cruise", "Data toggle"},
-		{"Li-ion", "LiPo", ""},
-		{"PPM", "PPM and UART", "UART"},
-	};
-  
-	String settingUnits[3] = {"S", "T", "mm"};
-	String settingValue, settingUnit;
-
-	// Used to map setting values and units to the right setting number
-	uint8_t unitIdentifier[numOfSettings]  = {0,0,1,0,2,2,3,0,0,0,0,0};
-	uint8_t valueIdentifier[numOfSettings] = {1,2,0,0,0,0,0,3,0,0,0,0};
-	
-	// Base coordinates
-	uint8_t x = 0;
-	uint8_t y = 10;
-	
-	// Local variable to store the setting value
+	// Local variables to store the setting value and unit
 	uint64_t value;
+
+	x = 0;
+	y = 10;
 	
 	// Print setting title
-	tempString = getSettingTitle( currentSetting );
-  drawString(tempString, tempString.length() + 1, x, y, u8g2_font_profont12_tr );
+	u8g2.setFont(u8g2_font_profont12_tr);
+	u8g2.drawStr(x, y, titles[ currentSetting ] );
 
 	// Get current setting value
+	switch(currentSetting){
+		case ADDRESS:
+			value = txSettings.address;
+		break;
 
-  switch(currentSetting){
-    case ADDRESS:
-      value = txSettings.address;
-      break;
-  
-    case RESET:
-      value = defaultAddress;
-      break;
+		case RESET:
+			value = defaultAddress;
+		break;
 
-    default:
-      value = getSettingValue(currentSetting);
-      break;
-  }
+		default:
+			value = getSettingValue(currentSetting);
+		break;
+	}
 
 	// Check if there is a text string for the setting value
 	if( valueIdentifier[currentSetting] != 0 )
 	{
-    uint8_t index = valueIdentifier[ currentSetting ] - 1;
-    settingValue = settingValues[ index ][ value ]; 
+		uint8_t index = valueIdentifier[ currentSetting ] - 1;
+		tString = stringValues[ index ][ value ]; 
 	}
 	else
 	{
-    if(currentSetting == ADDRESS || currentSetting == RESET){
-      settingValue = uint64ToAddress(value);
-    }else{
-		  settingValue = uint64ToString(value);
-    }
+		if(currentSetting == ADDRESS || currentSetting == RESET){
+			tString = uint64ToAddress(value);
+		}else{
+			tString = uint64ToString(value);
+		}
 	}
- 
+
 	if( unitIdentifier[ currentSetting ] != 0 ){
-		settingUnit = settingUnits[ unitIdentifier[ currentSetting ] - 1 ];
+		tString += settingUnits[ unitIdentifier[ currentSetting ] - 1 ];
 	}
 
-	// Display the setting value, and its unit
-	tempString = settingValue + settingUnit;
-
-	if ( changeSelectedSetting == true )
+	if ( changeThisSetting == true )
 	{
-    drawString(tempString, tempString.length() + 1, x + 10, y + 20, u8g2_font_10x20_tr );
-    
-    if( inRange(currentSetting, 8, 10) ){
-      tempString = "(" + (String)hallValue + ")";
-      drawString(tempString, 8, x + 92, y + 20, u8g2_font_profont12_tr );
-    }
+		drawString(tString, tString.length(), x + 10, y + 20, u8g2_font_10x20_tr );
+
+    // If setting has something to do with the hallValue
+		if( inRange(currentSetting, 8, 10) ){
+			tString = "(" + String(hallValue) + ")";
+			drawString(tString, tString.length(), x + 92, y + 20, u8g2_font_profont12_tr );
+		}
 	}
 	else
 	{
-		drawString(tempString, tempString.length() + 1, x, y + 20, u8g2_font_10x20_tr );
+		drawString(tString, tString.length(), x, y + 20, u8g2_font_10x20_tr );
 	}
 }
-
 
 void drawStartScreen() {
 	u8g2.firstPage();
@@ -713,37 +748,35 @@ void drawStartScreen() {
     
 		u8g2.drawXBM( 4, 4, 24, 24, logo);
 
-		tempString = F("Firefly remote");
-    drawString(tempString, 15, 33, 21, u8g2_font_helvR10_tr );
-    
+    u8g2.setFont(u8g2_font_10x20_tr);
+    u8g2.drawStr(35, 21, "Firefly");
+
 	} while ( u8g2.nextPage() );
-  
-	delay(1500);
+
+  delay(1500);
 }
 
 void drawTitleScreen(String title) {
 	u8g2.firstPage();
  
 	do {
-	
-    drawString(title, 20, 12, 20, u8g2_font_helvR10_tr );
-    
+
+		drawString(title, 20, 12, 20, u8g2_font_10x20_tr );
+
 	} while ( u8g2.nextPage() );
-  
+
 	delay(1500);
 }
 
+
 void drawPage() {
-  
-	float value;
 	uint8_t decimals;
-	String suffix;
-	String prefix;
+	float value;
 
 	short first, last;
 
-	uint8_t x = 0;
-	uint8_t y = 16;
+	x = 0;
+	y = 16;
 
 	// Rotate the realtime data each 4s.
 	if ((millis() - lastDataRotation) >= 4000) {
@@ -759,26 +792,21 @@ void drawPage() {
 	switch (displayData) {
 		case 0:
 			value = ratioRpmSpeed * returnData.rpm;
-			suffix = F("KMH");
-			prefix = F("SPEED");
 			decimals = 1;
-			break;
+		break;
 		case 1:
 			value = ratioPulseDistance * returnData.tachometerAbs;
-			suffix = F("KM");
-			prefix = F("DISTANCE");
 			decimals = 2;
-			break;
+		break;
 		case 2:
-			value = returnData.inpVoltage;
-			suffix = F("%");
-			prefix = F("BATTERY");
+			value = batteryPackPercentage( returnData.inpVoltage );
 			decimals = 1;
-			break;
+		break;
 	}
 
 	// Display prefix (title)
-  drawString(prefix, 10, x, y - 1, u8g2_font_profont12_tr );
+  u8g2.setFont(u8g2_font_profont12_tr);
+  u8g2.drawStr(x, y-1, dataPrefix[ displayData ] );
 
 	// Split up the float value: a number, b decimals.
 	first = abs( floor(value) );
@@ -786,36 +814,41 @@ void drawPage() {
 
 	// Add leading zero
 	if ( first <= 9 ) {
-		tempString = "0" + (String)first;
+		tString = "0" + String(first);
 	} else {
-		tempString = (String)first;
+		tString = first;
 	}
 
 	// Display numbers
-  drawString(tempString, 10, x + 55, y + 13, u8g2_font_logisoso22_tn );
+	drawString(tString, 10, x + 55, y + 13, u8g2_font_logisoso22_tn );
 
 	// Display decimals
-  tempString = "." + (String)last;
-  drawString(tempString, decimals + 2, x + 86, y - 1, u8g2_font_profont12_tr);
+	tString = ".";
+  tString += last;
+	drawString(tString, decimals + 2, x + 86, y - 1, u8g2_font_profont12_tr);
 
 	// Display suffix
-  drawString(suffix, 10, x + 88, y + 13, u8g2_font_profont12_tr);
+  u8g2.setFont(u8g2_font_profont12_tr);
+  u8g2.drawStr(x + 88, y + 13, dataSuffix[ displayData ] );
 }
 
-void drawString(String text, uint8_t lenght, uint8_t x, uint8_t y, const uint8_t  *font){
-  
-  static char textBuffer[20];
-  
-  text.toCharArray(textBuffer, lenght);
+void drawString(String string, uint8_t lenght, uint8_t x, uint8_t y, const uint8_t *font){
 
-  u8g2.setFont(font);
-  u8g2.drawStr(x, y, textBuffer);
+	static char cache[20];
+
+	string.toCharArray(cache, lenght + 1);
+
+	u8g2.setFont(font);
+	u8g2.drawStr(x, y, cache);
+
 }
 
 void drawThrottle() {
-	uint8_t x = 0;
-	uint8_t y = 18;
-  uint8_t width;
+	
+	x = 0;
+	y = 18;
+
+	uint8_t width;
   
 	// Draw throttle
 	u8g2.drawHLine(x, y, 52);
@@ -843,8 +876,8 @@ void drawThrottle() {
 
 void drawSignal() {
 	// Position on OLED
-	uint8_t x = 114;
-	uint8_t y = 17;
+	x = 114;
+	y = 17;
 
 	if (connected == true) {
 		if (triggerActive()) {
@@ -868,10 +901,10 @@ void drawSignal() {
 
 void drawBatteryLevel() {
 	// Position on OLED
-	uint8_t x = 108; 
-  uint8_t y = 4;
+	x = 108; 
+	y = 4;
 
-  uint8_t level = batteryLevel();
+	uint8_t level = batteryLevel();
 
 	u8g2.drawFrame(x + 2, y, 18, 9);
 	u8g2.drawBox(x, y + 2, 2, 5);
@@ -916,28 +949,26 @@ uint64_t generateAddress()
 	}
  
 	// Convert hex char array to uint64_t 
-	uint64_t address = StringToUint64(temp);
-
-	return address;
+	return StringToUint64(temp);
 }
 
 String uint64ToString(uint64_t number)
 {
-  unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
-  unsigned long part2 = (unsigned long)((number));
+	unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
+	unsigned long part2 = (unsigned long)((number));
 
-  if(part1 == 0){
-    return String(part2, DEC);
-  }
-  return String(part1, DEC) + String(part2, DEC);
+	if(part1 == 0){
+	  return String(part2, DEC);
+	}
+	return String(part1, DEC) + String(part2, DEC);
 }
 
 String uint64ToAddress(uint64_t number)
 {
-  unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
-  unsigned long part2 = (unsigned long)((number));
+	unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
+	unsigned long part2 = (unsigned long)((number));
 
-  return String(part1, HEX) + String(part2, HEX);
+	return String(part1, HEX) + String(part2, HEX);
 }
 
 // Convert hex String to uint64_t: http://forum.arduino.cc/index.php?topic=233813.0

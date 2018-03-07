@@ -4,7 +4,7 @@
 #include "RF24.h"
 #include "VescUart.h"
 
-// #define DEBUG
+#define DEBUG
 
 #ifdef DEBUG
 	#define DEBUG_PRINT(x)  Serial.println (x)
@@ -15,9 +15,9 @@
 
 // Transmit and receive package
 struct package {		// | Normal    | Setting 	| Confirm
-	uint8_t type;		// | 0         | 1			| 2
-	uint8_t throttle;	// | Throttle  | ---        | ---
-	uint8_t trigger;	// | Trigger   | ---       	| ---
+	uint8_t type;		  // | 0         | 1			  | 2
+	uint8_t throttle;	// | Throttle  | ---      | ---
+	uint8_t trigger;	// | Trigger   | ---      | ---
 } remPackage;
 
 #define NORMAL 0
@@ -52,7 +52,7 @@ struct bldcMeasure uartData;
 const uint8_t numOfSettings = 3;
 // Setting rules format: default, min, max.
 const short settingRules[numOfSettings][3] {
-	{0, 0, 2}, // 0: Killswitch | 1: Cruise       | 2: Reverse
+	{0, 0, 1}, // 0: Killswitch | 1: Cruise   
 	{1,	0, 2}, // 0: PPM only   | 1: PPM and UART | 2: UART only
 	{-1, 0, 0} // No validation for address in this manner 
 };
@@ -101,7 +101,6 @@ RF24 radio(CE, CS);
 
 void setup()
 {
-
 	// setDefaultEEPROMSettings(); // Use this first time you upload code
 
 	#ifdef DEBUG
@@ -158,7 +157,7 @@ void loop()
 	/* End address reset */
 
 	/* Begin listen for transmission */
-	while (radio.available())
+	while (radio.available() && !recievedData)
 	{
 		// Read and store the received package
 		radio.read( &remPackage, sizeof(remPackage) );
@@ -288,6 +287,107 @@ void statusBlink(uint8_t statusCode){
 	digitalWrite(statusLedPin, statusBlinkFlag);
 }
 
+void acquireSetting() {
+  
+  uint8_t setting;
+  uint64_t value;
+  
+  unsigned long beginTime = millis();
+  
+  bool receivedSetting = false;
+  bool receivedConfirm = false;
+  
+  DEBUG_PRINT("Waiting for new setting...");
+  
+  // Wait for new setting
+  while ( receivedSetting == false && 500 >= ( millis() - beginTime) ) {
+
+    if ( radio.available() ) {
+      
+      // Read and store the received setting
+      radio.read( &setPackage, sizeof(setPackage));
+
+      if(receivedSetting == false){
+        DEBUG_PRINT("Received new setting");
+        setting = setPackage.setting;
+        value = setPackage.value;
+        
+        // Return the setPackage in acknowlegdement
+        radio.writeAckPayload(1, &setPackage, sizeof(setPackage));
+      }
+      
+      receivedSetting = true;
+
+      delay(100);
+
+    }
+  }
+
+  // Clear receiver buffer
+  beginTime = millis();
+  while ( radio.available() && 500 >= ( millis() - beginTime) ) {
+    DEBUG_PRINT("Cleared");
+    radio.read( &setPackage, sizeof(setPackage) );
+    delay(100);
+  }
+
+  if (receivedSetting == true) {
+
+    // Check if the TX Ack DATA is matching
+    DEBUG_PRINT("Waiting for confirmation");
+
+    beginTime = millis();
+
+    while (1000 >= ( millis() - beginTime) && !receivedConfirm) {
+
+      if( radio.available() ){
+
+        radio.read( &remPackage, sizeof(remPackage));
+
+        DEBUG_PRINT(String(remPackage.type));
+
+        if(remPackage.type == CONFIRM){
+          receivedConfirm = true;
+          DEBUG_PRINT("Confirmed");
+        }
+      }
+
+      delay(100);
+        
+    }
+
+    if( receivedConfirm == true){
+      updateSetting(setting, value);
+      DEBUG_PRINT("Updated setting.");
+
+      statusBlink(COMPLETE);
+    }
+
+    delay(100);
+
+  }
+
+  // Something went wrong, lets clear all buffers
+
+  if (receivedSetting == false || receivedConfirm == false || radio.available()) {
+
+    DEBUG_PRINT("Failed! Clearing buffer");
+    statusBlink(FAILED);
+
+    beginTime = millis();
+
+    while (radio.available() && 500 >= ( millis() - beginTime)) {
+
+      radio.read( &setPackage, sizeof(setPackage) );
+      radio.read( &remPackage, sizeof(remPackage) );
+
+      DEBUG_PRINT("Cleared buffer");
+    }
+  }
+
+}
+
+/*
 void acquireSetting(){
 
 	uint64_t value;
@@ -359,7 +459,7 @@ void acquireSetting(){
 			DEBUG_PRINT("Cleared buffer");
 		}
 	}
-}
+}*/
 
 void initiateReceiver(){
 
@@ -445,9 +545,9 @@ void controlThrottle( uint8_t throttle , bool trigger )
 				if( lastRPM != returnData.rpm && returnData.rpm != 0) {
 
 					if( returnData.rpm < cruiseRPM ){
-						cruiseThrottle += 5;
+						cruiseThrottle += 1;
 					}else if ( returnData.rpm > cruiseRPM ){
-						cruiseThrottle -= 5;
+						cruiseThrottle -= 1;
 					}
 				}
 
@@ -458,7 +558,7 @@ void controlThrottle( uint8_t throttle , bool trigger )
 			setThrottle( cruiseThrottle );
 
 			#ifdef DEBUG
-				DEBUG_PRINT( "Cruise control throttle: " + (String)cruisePPM );
+				DEBUG_PRINT( "Cruise control throttle: " + (String)cruiseThrottle );
 			#endif
 		}
 		else
