@@ -4,7 +4,7 @@
 #include <EEPROM.h>
 #include "RF24.h"
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
 	#define DEBUG_PRINT(x)  Serial.println (x)

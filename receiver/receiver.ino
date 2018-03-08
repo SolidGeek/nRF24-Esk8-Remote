@@ -1,10 +1,10 @@
 #include <SPI.h>
 #include <EEPROM.h>
-#include <nRF24L01.h>
+#include <Servo.h>
 #include "RF24.h"
 #include "VescUart.h"
 
-#define DEBUG
+// #define DEBUG
 
 #ifdef DEBUG
 	#define DEBUG_PRINT(x)  Serial.println (x)
@@ -14,10 +14,10 @@
 #endif
 
 // Transmit and receive package
-struct package {		// | Normal    | Setting 	| Confirm
-	uint8_t type;		  // | 0         | 1			  | 2
-	uint8_t throttle;	// | Throttle  | ---      | ---
-	uint8_t trigger;	// | Trigger   | ---      | ---
+struct package {		// | Normal 	| Setting 	| Confirm
+	uint8_t type;		// | 0 			| 1 		| 2
+	uint8_t throttle;	// | Throttle 	| ---		| ---
+	uint8_t trigger;	// | Trigger 	| --- 		| ---
 } remPackage;
 
 #define NORMAL 0
@@ -99,6 +99,9 @@ const uint8_t resetAddressPin = 6;
 // Initiate RF24 class 
 RF24 radio(CE, CS);
 
+// Initiate Servo class
+Servo esc;
+
 void setup()
 {
 	// setDefaultEEPROMSettings(); // Use this first time you upload code
@@ -117,11 +120,13 @@ void setup()
 
 	initiateReceiver();
 
-	pinMode(throttlePin, OUTPUT);
+	// pinMode(throttlePin, OUTPUT);
 	pinMode(statusLedPin, OUTPUT);
 	pinMode(resetAddressPin, INPUT_PULLUP);
 
-	analogWrite(throttlePin, defaultThrottle);
+	// analogWrite(throttlePin, defaultThrottle);
+
+	esc.attach(throttlePin);
 
 	DEBUG_PRINT("Setup complete - begin listening");
 
@@ -162,7 +167,8 @@ void loop()
 		// Read and store the received package
 		radio.read( &remPackage, sizeof(remPackage) );
 		DEBUG_PRINT( uint64ToAddress(rxSettings.address) + " - New package: '" + (String)remPackage.type + "-" + (String)remPackage.throttle + "-" + (String)remPackage.trigger + "'" );
-
+    delay(10); 
+    
 		if( remPackage.type <= 2 ){
 			timeoutTimer = millis();
 			recievedData = true;
@@ -289,101 +295,100 @@ void statusBlink(uint8_t statusCode){
 
 void acquireSetting() {
   
-  uint8_t setting;
-  uint64_t value;
-  
-  unsigned long beginTime = millis();
-  
-  bool receivedSetting = false;
-  bool receivedConfirm = false;
-  
-  DEBUG_PRINT("Waiting for new setting...");
-  
-  // Wait for new setting
-  while ( receivedSetting == false && 500 >= ( millis() - beginTime) ) {
+	uint8_t setting;
+	uint64_t value;
 
-    if ( radio.available() ) {
-      
-      // Read and store the received setting
-      radio.read( &setPackage, sizeof(setPackage));
+	unsigned long beginTime = millis();
 
-      if(receivedSetting == false){
-        DEBUG_PRINT("Received new setting");
-        setting = setPackage.setting;
-        value = setPackage.value;
-        
-        // Return the setPackage in acknowlegdement
-        radio.writeAckPayload(1, &setPackage, sizeof(setPackage));
-      }
-      
-      receivedSetting = true;
+	bool receivedSetting = false;
+	bool receivedConfirm = false;
 
-      delay(100);
+	DEBUG_PRINT("Waiting for new setting...");
 
-    }
-  }
+	// Wait for new setting
+	while ( receivedSetting == false && 500 >= ( millis() - beginTime) ) {
 
-  // Clear receiver buffer
-  beginTime = millis();
-  while ( radio.available() && 500 >= ( millis() - beginTime) ) {
-    DEBUG_PRINT("Cleared");
-    radio.read( &setPackage, sizeof(setPackage) );
-    delay(100);
-  }
+		if ( radio.available() ) {
 
-  if (receivedSetting == true) {
+			// Read and store the received setting
+			radio.read( &setPackage, sizeof(setPackage));
 
-    // Check if the TX Ack DATA is matching
-    DEBUG_PRINT("Waiting for confirmation");
+			if(receivedSetting == false){
+			DEBUG_PRINT("Received new setting");
+			setting = setPackage.setting;
+			value = setPackage.value;
 
-    beginTime = millis();
+			// Return the setPackage in acknowlegdement
+			radio.writeAckPayload(1, &setPackage, sizeof(setPackage));
+		}
 
-    while (1000 >= ( millis() - beginTime) && !receivedConfirm) {
+		receivedSetting = true;
 
-      if( radio.available() ){
+		delay(100);
 
-        radio.read( &remPackage, sizeof(remPackage));
+		}
+	}
 
-        DEBUG_PRINT(String(remPackage.type));
+	// Clear receiver buffer
+	beginTime = millis();
+	while ( radio.available() && 500 >= ( millis() - beginTime) ) {
+		DEBUG_PRINT("Cleared");
+		radio.read( &setPackage, sizeof(setPackage) );
+		delay(100);
+	}
 
-        if(remPackage.type == CONFIRM){
-          receivedConfirm = true;
-          DEBUG_PRINT("Confirmed");
-        }
-      }
+	if (receivedSetting == true) {
 
-      delay(100);
-        
-    }
+		// Check if the TX Ack DATA is matching
+		DEBUG_PRINT("Waiting for confirmation");
 
-    if( receivedConfirm == true){
-      updateSetting(setting, value);
-      DEBUG_PRINT("Updated setting.");
+		beginTime = millis();
 
-      statusBlink(COMPLETE);
-    }
+		while (1000 >= ( millis() - beginTime) && !receivedConfirm) {
 
-    delay(100);
+			if( radio.available() ){
 
-  }
+				radio.read( &remPackage, sizeof(remPackage));
 
-  // Something went wrong, lets clear all buffers
+				DEBUG_PRINT(String(remPackage.type));
 
-  if (receivedSetting == false || receivedConfirm == false || radio.available()) {
+				if(remPackage.type == CONFIRM){
+				receivedConfirm = true;
+				DEBUG_PRINT("Confirmed");
+			}
+		}
 
-    DEBUG_PRINT("Failed! Clearing buffer");
-    statusBlink(FAILED);
+		delay(100);
 
-    beginTime = millis();
+		}
 
-    while (radio.available() && 500 >= ( millis() - beginTime)) {
+		if( receivedConfirm == true){
+			updateSetting(setting, value);
+			DEBUG_PRINT("Updated setting.");
 
-      radio.read( &setPackage, sizeof(setPackage) );
-      radio.read( &remPackage, sizeof(remPackage) );
+			statusBlink(COMPLETE);
+		}
 
-      DEBUG_PRINT("Cleared buffer");
-    }
-  }
+		delay(100);
+	}
+
+	// Something went wrong, lets clear all buffers
+
+	if (receivedSetting == false || receivedConfirm == false || radio.available()) {
+
+		DEBUG_PRINT("Failed! Clearing buffer");
+		statusBlink(FAILED);
+
+		beginTime = millis();
+
+		while (radio.available() && 500 >= ( millis() - beginTime)) {
+
+			radio.read( &setPackage, sizeof(setPackage) );
+			radio.read( &remPackage, sizeof(remPackage) );
+
+			DEBUG_PRINT("Cleared buffer");
+		}
+	}
 
 }
 
@@ -499,7 +504,15 @@ void updateSetting( uint8_t setting, uint64_t value)
 
 void setThrottle( uint8_t throttle )
 {
-	analogWrite(throttlePin, throttle);
+	// analogWrite(throttlePin, throttle);
+
+
+	short ppm = map(throttle, 0, 255, 1000, 2000);
+
+  DEBUG_PRINT(String(throttle) + " = " + String(ppm) + "ms");
+
+  
+	esc.writeMicroseconds(ppm);
 }
 
 void controlThrottle( uint8_t throttle , bool trigger )
@@ -507,8 +520,7 @@ void controlThrottle( uint8_t throttle , bool trigger )
 	// Kill switch
 	if( rxSettings.triggerMode == 0)
 	{
-		DEBUG_PRINT("Killswitch");
-		if ( trigger == false || throttle < 127 )
+		if ( trigger == true || throttle < 127 ) // We want to be able to brake even if the trigger is broken
 		{
 			setThrottle( throttle );
 		}
@@ -542,16 +554,18 @@ void controlThrottle( uint8_t throttle , bool trigger )
 
 				// While cruise control is active, try to achieve the same ERPM as just measured
 
-				if( lastRPM != returnData.rpm && returnData.rpm != 0) {
+				if( lastRPM != returnData.rpm ) {
 
 					if( returnData.rpm < cruiseRPM ){
 						cruiseThrottle += 1;
 					}else if ( returnData.rpm > cruiseRPM ){
 						cruiseThrottle -= 1;
 					}
+
+					lastRPM = returnData.rpm;
 				}
 
-				lastRPM = returnData.rpm;
+				
 
 			}
 
@@ -571,7 +585,7 @@ void controlThrottle( uint8_t throttle , bool trigger )
 
 void getUartData()
 {
-	if ( millis() - lastUartPull >= 200 ) {
+	if ( millis() - lastUartPull >= 500 ) {
 
 		lastUartPull = millis();
 
