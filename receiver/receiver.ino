@@ -16,7 +16,7 @@
 // Transmit and receive package
 struct package {		// | Normal 	| Setting 	| Confirm
 	uint8_t type;		// | 0 			| 1 		| 2
-	uint8_t throttle;	// | Throttle 	| ---		| ---
+	uint16_t throttle;	// | Throttle 	| ---		| ---
 	uint8_t trigger;	// | Trigger 	| --- 		| ---
 } remPackage;
 
@@ -73,10 +73,12 @@ bool recievedData = false;
 unsigned long lastUartPull;
 
 // Variables for cruise-control
-long cruiseRPM;
-long lastRPM; 
-uint8_t cruiseThrottle;
+int uartCount, lastUartCount;
+uint16_t cruiseThrottle;
 bool cruising;
+float cruiseSetpoint;
+float prevError, totalError;
+float Kp = 0.0075, Ki = 0.00065, Kd = 0.0015;
 
 // Address reset button
 unsigned long resetButtonTimer;
@@ -86,7 +88,7 @@ bool resetButtonState = LOW;
 unsigned long lastStatusBlink;
 bool statusBlinkFlag = LOW;
 
-const uint8_t defaultThrottle = 127;
+const uint16_t defaultThrottle = 512;
 const short timeoutMax = 500;
 
 // Defining receiver pins
@@ -124,8 +126,6 @@ void setup()
 	pinMode(statusLedPin, OUTPUT);
 	pinMode(resetAddressPin, INPUT_PULLUP);
 
-	// analogWrite(throttlePin, defaultThrottle);
-
 	esc.attach(throttlePin);
 
 	DEBUG_PRINT("Setup complete - begin listening");
@@ -144,7 +144,7 @@ void loop()
 		resetButtonState = LOW;
 	}
 
-	if (resetButtonState == HIGH && (millis() - resetButtonTimer) > 5000 ) {
+	if (resetButtonState == HIGH && (millis() - resetButtonTimer) > 3000 ) {
 
 		DEBUG_PRINT("Loading default address");
 
@@ -249,9 +249,7 @@ void statusBlink(uint8_t statusCode){
 			}
 
 			statusBlinkFlag = LOW;
-
 			return;
-
 		break;
 
 		case FAILED:
@@ -273,7 +271,6 @@ void statusBlink(uint8_t statusCode){
 			}
 
 			statusBlinkFlag = LOW;
-
 			return;
 		break;
 	}
@@ -348,18 +345,17 @@ void acquireSetting() {
 
 			if( radio.available() ){
 
-				radio.read( &remPackage, sizeof(remPackage));
-
-				DEBUG_PRINT(String(remPackage.type));
-
-				if(remPackage.type == CONFIRM){
-				receivedConfirm = true;
-				DEBUG_PRINT("Confirmed");
-			}
-		}
-
-		delay(100);
-
+  				radio.read( &remPackage, sizeof(remPackage));
+  
+  				DEBUG_PRINT(String(remPackage.type));
+  
+  				if(remPackage.type == CONFIRM){
+  				receivedConfirm = true;
+  				DEBUG_PRINT("Confirmed");
+  			}
+  		}
+  
+  		delay(100);
 		}
 
 		if( receivedConfirm == true){
@@ -389,82 +385,7 @@ void acquireSetting() {
 			DEBUG_PRINT("Cleared buffer");
 		}
 	}
-
 }
-
-/*
-void acquireSetting(){
-
-	uint64_t value;
-	unsigned long beginTime = millis(); 
-	bool receivedSetting = false;
-	bool receivedConfirm = false;
-
-	DEBUG_PRINT("Waiting for new setting...");
-
-	// Wait for new setting
-	while(500 >= ( millis() - beginTime) && receivedSetting == false){
-
-		while (radio.available())
-		{
-			// Read and store the received
-			radio.read( &setPackage, sizeof(setPackage) );
-			receivedSetting = true;
-
-			if(setPackage.setting == 11){
-				DEBUG_PRINT("Received new setting: '" + (String)setPackage.setting + "=" + uint64ToAddress(setPackage.value) + "'");  
-			}else{
-				DEBUG_PRINT("Received new setting: '" + (String)setPackage.setting + "=" + uint64ToString(setPackage.value) + "'");
-			}
-		}
-	}
-
-	if ( receivedSetting == true ) {
-
-		value = setPackage.value;
-
-		// Return the new setting value with auto ack to validate the process
-		radio.writeAckPayload(1, &value, sizeof(value));
-		DEBUG_PRINT("Queued setting acknowledgement");
-
-		beginTime = millis(); 
-
-		// Wait for dummy package (otherwise acknowledgement will not be send)
-		while(500 >= ( millis() - beginTime) && receivedConfirm == false){
-
-			while (radio.available())
-			{
-				radio.read( &remPackage, sizeof(remPackage) );
-				receivedConfirm = true;
-
-				DEBUG_PRINT("Received confirm package.");
-			}
-		}
-
-		if( receivedConfirm == true ){
-			updateSetting(setPackage.setting, value);
-			DEBUG_PRINT("Updated setting.");
-			
-			statusBlink(COMPLETE);
-		}
-
-		delay(200);
-	}
-
-	if (receivedSetting == false || receivedConfirm == false)
-	{
-		DEBUG_PRINT("Failed! Clearing receiver buffer");
-
-		statusBlink(FAILED);
-
-		delay(200);
-		while (radio.available())
-		{
-			radio.read( &setPackage, sizeof(setPackage) );
-			DEBUG_PRINT("Cleared buffer");
-		}
-	}
-}*/
 
 void initiateReceiver(){
 
@@ -502,20 +423,28 @@ void updateSetting( uint8_t setting, uint64_t value)
 	}
 }
 
-void setThrottle( uint8_t throttle )
+void setThrottle( uint16_t throttle )
 {
-	// analogWrite(throttlePin, throttle);
-
-
-	short ppm = map(throttle, 0, 255, 1000, 2000);
-
-  DEBUG_PRINT(String(throttle) + " = " + String(ppm) + "ms");
-
-  
+	short ppm = map(throttle, 0, 1023, 1000, 2000);
+  DEBUG_PRINT(String(throttle) + " = " + String(ppm) + "ms"); 
 	esc.writeMicroseconds(ppm);
 }
 
-void controlThrottle( uint8_t throttle , bool trigger )
+/* Try to adjust cruiseThrottle with PID (not perfect, limited by low sample rate from UART) */
+void adjustCruise(){
+
+  float error = (returnData.rpm - cruiseSetpoint);
+  totalError += error;
+  
+  float adjust = (Kp * error) + (Ki * totalError) + (Kd * (error - prevError));
+  
+  cruiseThrottle = constrain(512 - (int)adjust, 0, 1023);
+  
+  prevError = error;
+  
+}
+
+void controlThrottle( uint16_t throttle , bool trigger )
 {
 	// Kill switch
 	if( rxSettings.triggerMode == 0)
@@ -535,8 +464,7 @@ void controlThrottle( uint8_t throttle , bool trigger )
 	{ 
 		if( trigger == true )
 		{
-
-			// If control mode is PPM only
+			/* --- PPM only --- */
 			if( rxSettings.controlMode == 0){
 				// Keep current PPM value until trigger is released
 				if(cruising == false){
@@ -544,29 +472,22 @@ void controlThrottle( uint8_t throttle , bool trigger )
 					cruising = true;
 				}
 				
-			}else{
-
+			}
+			/* --- PPM and UART --- */
+			else if( rxSettings.controlMode == 1)
+			{
 				if(cruising == false){
-					cruiseRPM = returnData.rpm;
-					cruiseThrottle = throttle;
+					cruiseSetpoint = (float)returnData.rpm;
 					cruising = true;
 				}
 
-				// While cruise control is active, try to achieve the same ERPM as just measured
+				// While cruise control is active, try to achieve the same ERPM as just measured with PID 
+				if( uartCount > lastUartCount ) {
 
-				if( lastRPM != returnData.rpm ) {
-
-					if( returnData.rpm < cruiseRPM ){
-						cruiseThrottle += 1;
-					}else if ( returnData.rpm > cruiseRPM ){
-						cruiseThrottle -= 1;
-					}
-
-					lastRPM = returnData.rpm;
+          adjustCruise( );
+          lastUartCount = uartCount;
+         
 				}
-
-				
-
 			}
 
 			setThrottle( cruiseThrottle );
@@ -585,7 +506,7 @@ void controlThrottle( uint8_t throttle , bool trigger )
 
 void getUartData()
 {
-	if ( millis() - lastUartPull >= 500 ) {
+	if ( millis() - lastUartPull >= 10 ) {
 
 		lastUartPull = millis();
 
@@ -596,6 +517,8 @@ void getUartData()
 			returnData.inpVoltage		= uartData.inpVoltage;
 			returnData.rpm 				= uartData.rpm;
 			returnData.tachometerAbs 	= uartData.tachometerAbs;
+
+      uartCount++;
 		} 
 		else
 		{

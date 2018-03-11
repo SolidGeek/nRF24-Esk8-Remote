@@ -51,7 +51,7 @@ struct callback {
 // Transmit and receive package
 struct package {		// | Normal 	| Setting 	| Dummy
 	uint8_t type;		// | 0 			| 1			| 2
-	uint8_t throttle;	// | Throttle 	| 			| 
+	uint16_t throttle;	// | Throttle 	| 			| 
 	uint8_t trigger;	// | Trigger 	| 			| 
 } remPackage;
 
@@ -148,8 +148,8 @@ const float maxVoltage = 4.1;
 const float refVoltage = 5.0;
 
 // Defining variables for Hall Effect throttle.
-short hallValue, throttle;
-uint8_t hallCenterMargin = 4;
+uint16_t hallValue, throttle;
+uint8_t hallCenterMargin = 16;
 uint8_t hallMenuMargin = 100;
 
 // Defining variables for NRF24 communication
@@ -171,7 +171,6 @@ RF24 radio(CE, CS);
 // Defining variables for Settings menu
 bool changeSettings = false;
 bool changeThisSetting = false;
-
 bool settingsLoopFlag = false;
 bool settingsChangeFlag = false;
 bool settingsChangeValueFlag = false;
@@ -179,13 +178,12 @@ unsigned short settingWaitDelay = 500;
 
 bool signalBlink = false;
 
-
 // Used to set position of graphics
 uint8_t x, y;
 
 void setup() {
 
-  setDefaultEEPROMSettings();
+  // setDefaultEEPROMSettings();
  
 	#ifdef DEBUG
 		Serial.begin(9600);
@@ -211,7 +209,6 @@ void setup() {
 	initiateTransmitter();
 
   delay(500);
-
 }
 
 void loop() {
@@ -622,15 +619,17 @@ void calculateThrottlePosition()
 	
 	if ( hallValue >= txSettings.centerHallValue )
 	{
-		throttle = constrain( map(hallValue, txSettings.centerHallValue, txSettings.maxHallValue, 127, 255), 127, 255 );
+		throttle = constrain( map(hallValue, txSettings.centerHallValue, txSettings.maxHallValue, 512, 1023), 512, 1023 );
 	} else {
-		throttle = constrain( map(hallValue, txSettings.minHallValue, txSettings.centerHallValue, 0, 127), 0, 127 );
+		throttle = constrain( map(hallValue, txSettings.minHallValue, txSettings.centerHallValue, 0, 512), 0, 512 );
 	}
 
+  DEBUG_PRINT(String(throttle));
+
 	// removeing center noise
-	if ( abs(throttle - 127) < hallCenterMargin )
+	if ( abs(throttle - 512) < hallCenterMargin )
 	{
-		throttle = 127;
+		throttle = 512;
 	}
 }
 
@@ -805,8 +804,8 @@ void drawPage() {
 	}
 
 	// Display prefix (title)
-  u8g2.setFont(u8g2_font_profont12_tr);
-  u8g2.drawStr(x, y-1, dataPrefix[ displayData ] );
+	u8g2.setFont(u8g2_font_profont12_tr);
+	u8g2.drawStr(x, y-1, dataPrefix[ displayData ] );
 
 	// Split up the float value: a number, b decimals.
 	first = abs( floor(value) );
@@ -824,12 +823,12 @@ void drawPage() {
 
 	// Display decimals
 	tString = ".";
-  tString += last;
+	tString += last;
 	drawString(tString, decimals + 2, x + 86, y - 1, u8g2_font_profont12_tr);
 
 	// Display suffix
-  u8g2.setFont(u8g2_font_profont12_tr);
-  u8g2.drawStr(x + 88, y + 13, dataSuffix[ displayData ] );
+	u8g2.setFont(u8g2_font_profont12_tr);
+	u8g2.drawStr(x + 88, y + 13, dataSuffix[ displayData ] );
 }
 
 void drawString(String string, uint8_t lenght, uint8_t x, uint8_t y, const uint8_t *font){
@@ -857,15 +856,15 @@ void drawThrottle() {
 	u8g2.drawHLine(x, y + 10, 5);
 	u8g2.drawHLine(x + 52 - 4, y + 10, 5);
 
-	if (throttle >= 127) {
-		width = map(throttle, 127, 255, 0, 49);
+	if (throttle >= 512) {
+		width = map(throttle, 512, 1023, 0, 49);
 
 		for (uint8_t i = 0; i < width; i++)
 		{
 			u8g2.drawVLine(x + i + 2, y + 2, 7);
 		}
 	} else {
-		width = map(throttle, 0, 126, 49, 0);
+		width = map(throttle, 0, 511, 49, 0);
    
 		for (uint8_t i = 0; i < width; i++)
 		{
