@@ -6,6 +6,8 @@
 
 // #define DEBUG
 
+#define VERSION 2.0
+
 #ifdef DEBUG
 	#define DEBUG_PRINT(x)  Serial.println (x)
 	#include "printf.h"
@@ -42,19 +44,21 @@ struct callback {
 struct settings {
 	uint8_t triggerMode; // Trigger mode
 	uint8_t controlMode; // PWM, PWM & UART or UART only
-	uint8_t motorPoles; // Pole pairs
 	uint64_t address;    // Listen on this address
+  float firmVersion;   
 } rxSettings;
 
 // Struct used to store UART data
 struct bldcMeasure uartData;
+struct remotePackage uartControl; 
 
-const uint8_t numOfSettings = 3;
+const uint8_t numOfSettings = 4;
 // Setting rules format: default, min, max.
 const short settingRules[numOfSettings][3] {
 	{0, 0, 1}, // 0: Killswitch | 1: Cruise   
 	{1,	0, 2}, // 0: PPM only   | 1: PPM and UART | 2: UART only
-	{-1, 0, 0} // No validation for address in this manner 
+	{-1, 0, 0}, // No validation for address in this manner 
+  {-1, 0, 0}
 };
 
 // Define default 8 byte address
@@ -71,22 +75,22 @@ bool recievedData = false;
 
 // Last time data was pulled from VESC
 unsigned long lastUartPull;
+uint8_t uartPullInterval = 100;
 
-// Variables for cruise-control
-int uartCount, lastUartCount;
+// Cruise control
 uint16_t cruiseThrottle;
+uint16_t cruiseRPM;
 bool cruising;
-float cruiseSetpoint;
-float prevError, totalError;
-float Kp = 0.0075, Ki = 0.00065, Kd = 0.0015;
 
 // Address reset button
 unsigned long resetButtonTimer;
 bool resetButtonState = LOW;
 
 // Status blink LED
-unsigned long lastStatusBlink;
-bool statusBlinkFlag = LOW;
+uint8_t statusCode = 0;
+bool statusLedState = false;
+short statusCycleTime = 0;
+unsigned long previousStatusMillis, currentMillis, startCycleMillis = 0;
 
 const uint16_t defaultThrottle = 512;
 const short timeoutMax = 500;
@@ -94,9 +98,9 @@ const short timeoutMax = 500;
 // Defining receiver pins
 const uint8_t CE = 9;
 const uint8_t CS = 10;
-const uint8_t statusLedPin = 4;
+const uint8_t statusLedPin = 6;
 const uint8_t throttlePin = 5;
-const uint8_t resetAddressPin = 6;
+const uint8_t resetAddressPin = 4;
 
 // Initiate RF24 class 
 RF24 radio(CE, CS);
@@ -106,7 +110,6 @@ Servo esc;
 
 void setup()
 {
-	// setDefaultEEPROMSettings(); // Use this first time you upload code
 
 	#ifdef DEBUG
 		Serial.begin(115200);
@@ -119,21 +122,26 @@ void setup()
 	#endif
 
 	loadEEPROMSettings();
-
 	initiateReceiver();
 
-	// pinMode(throttlePin, OUTPUT);
 	pinMode(statusLedPin, OUTPUT);
 	pinMode(resetAddressPin, INPUT_PULLUP);
-
 	esc.attach(throttlePin);
 
 	DEBUG_PRINT("Setup complete - begin listening");
+  
+  uartControl.valXJoy         = 127;
+  uartControl.valYJoy         = 127;
+  uartControl.valLowerButton  = false;
+  uartControl.valLowerButton  = false;
 
 }
 
 void loop()
 { 
+  /* Control Status LED */
+  controlStatusLed();
+  
 	/* Begin address reset */
 	if (digitalRead(resetAddressPin) == LOW) {
 		if(resetButtonState == LOW){
@@ -155,7 +163,7 @@ void loop()
 		// Reinitiate the recevier module
 		initiateReceiver();
 
-		statusBlink(COMPLETE);
+		setStatus(COMPLETE);
 
 		resetButtonTimer = millis();
 	}
@@ -179,12 +187,12 @@ void loop()
 	/* Begin data handling */
 	if(recievedData == true){
 
-		statusBlink(CONNECTED);
+		setStatus(CONNECTED);
 
 		if ( remPackage.type == NORMAL ) {
 
 			// Normal package
-			controlThrottle( remPackage.throttle, remPackage.trigger );
+			speedControl( remPackage.throttle, remPackage.trigger );
 			
 			if( rxSettings.controlMode != 0 ){
 				#ifdef DEBUG
@@ -201,7 +209,6 @@ void loop()
 
 			// Next package will be a change of setting
 			acquireSetting();
-
 		}
 	
 		recievedData = false;
@@ -212,8 +219,8 @@ void loop()
 	if ( timeoutMax <= ( millis() - timeoutTimer ) )
 	{
 		// No speed is received within the timeout limit.
-		statusBlink(TIMEOUT);
-		controlThrottle( defaultThrottle, false );
+		setStatus(TIMEOUT);
+		speedControl( defaultThrottle, false );
 		timeoutTimer = millis();
 
 		DEBUG_PRINT( uint64ToAddress(rxSettings.address) + " - Timeout");
@@ -221,73 +228,55 @@ void loop()
 	/* End timeout handling */
 }
 
-void statusBlink(uint8_t statusCode){
-	
-	short ontime, offtime;
 
-	switch(statusCode){
-		case CONNECTED:
-			ontime = 500; offtime = 0;
-		break;
 
-		case TIMEOUT:
-			ontime = 300; offtime = 300;
-		break;
+void setStatus(uint8_t code){
 
-		case COMPLETE:
-			ontime = 50; offtime = 50;
+  short cycle = 0;
 
-			for(uint8_t i = 0; i < 6; i++){
-				digitalWrite(statusLedPin, statusBlinkFlag);
-				statusBlinkFlag = !statusBlinkFlag;
+  switch(code){
+    case COMPLETE:  cycle = 500;    break;
+    case FAILED:    cycle = 1400;   break;
+  }
 
-				if(statusBlinkFlag){
-					delay(ontime);
-				}else{
-					delay(offtime);  
-				}
-			}
+  currentMillis = millis();
 
-			statusBlinkFlag = LOW;
-			return;
-		break;
+  if(currentMillis - startCycleMillis >= statusCycleTime){
+    statusCode = code;
+    statusCycleTime = cycle; 
+    startCycleMillis = currentMillis;
+  }
+}
 
-		case FAILED:
-			ontime = 500; offtime = 200;
+void controlStatusLed(){
 
-			digitalWrite(statusLedPin, LOW);
+  short oninterval, offinterval, cycle;
 
-			delay(1000);
+  switch(statusCode){
+    case TIMEOUT:   oninterval = 300;   offinterval = 300;  break;
+    case COMPLETE:  oninterval = 50;    offinterval = 50;   break;
+    case FAILED:    oninterval = 500;   offinterval = 200;  break;
+  }
 
-			for(uint8_t i = 0; i < 6; i++){
-				digitalWrite(statusLedPin, statusBlinkFlag);
-				statusBlinkFlag = !statusBlinkFlag;
+  currentMillis = millis();
 
-				if(statusBlinkFlag){
-					delay(ontime);
-				}else{
-					delay(offtime);  
-				}
-			}
+  if (currentMillis - previousStatusMillis >= offinterval && statusLedState == false ) {
 
-			statusBlinkFlag = LOW;
-			return;
-		break;
-	}
+    previousStatusMillis = currentMillis;
+    statusLedState = !statusLedState;
+    
+  }else if(currentMillis - previousStatusMillis >= oninterval && statusLedState == true){
 
-	if ((millis() - lastStatusBlink) > offtime && statusBlinkFlag == LOW) {
-		statusBlinkFlag = HIGH;
-		lastStatusBlink = millis();
-	}
-	else if ((millis() - lastStatusBlink) > ontime && statusBlinkFlag == HIGH) {
-		statusBlinkFlag = LOW;
-		lastStatusBlink = millis();
-	}
-	if ( offtime == 0 ){
-		statusBlinkFlag = HIGH;  
-	}
+    previousStatusMillis = currentMillis;
+    statusLedState = !statusLedState;
+    
+  }
 
-	digitalWrite(statusLedPin, statusBlinkFlag);
+  if(statusCode == CONNECTED){
+    analogWrite(statusLedPin, map(remPackage.throttle, 0, 1023, 0, 255)); 
+  }else{
+    digitalWrite(statusLedPin, statusLedState);
+  }  
 }
 
 void acquireSetting() {
@@ -362,7 +351,7 @@ void acquireSetting() {
 			updateSetting(setting, value);
 			DEBUG_PRINT("Updated setting.");
 
-			statusBlink(COMPLETE);
+			setStatus(COMPLETE);
 		}
 
 		delay(100);
@@ -373,7 +362,7 @@ void acquireSetting() {
 	if (receivedSetting == false || receivedConfirm == false || radio.available()) {
 
 		DEBUG_PRINT("Failed! Clearing buffer");
-		statusBlink(FAILED);
+		setStatus(FAILED);
 
 		beginTime = millis();
 
@@ -423,90 +412,98 @@ void updateSetting( uint8_t setting, uint64_t value)
 	}
 }
 
+void setCruise ( bool cruise = true, uint16_t setPoint = defaultThrottle ){
+  if( rxSettings.controlMode == 0 ){
+
+    setThrottle( setPoint );
+    
+  }
+  else if( rxSettings.controlMode == 1 ){
+    
+    setThrottle( setPoint );
+    
+  }
+  else if( rxSettings.controlMode == 2 ){
+
+    // Setpoint not used (PID by VESC)
+    uartControl.valLowerButton = cruise;
+    esc.detach();
+
+    // Make sure the motor doesn't begin to spin wrong way under high load (and don't allow cruise backwards)
+    if( returnData.rpm < 0 ){
+
+      uartControl.valLowerButton = false;
+      uartControl.valYJoy = 128;
+      VescUartSetNunchukValues(uartControl);
+      VescUartSetCurrent( 0.0 );
+ 
+    } else{
+
+      uartControl.valYJoy = 128;
+      VescUartSetNunchukValues(uartControl);
+      
+    }
+  }
+}
+
 void setThrottle( uint16_t throttle )
 {
-	short ppm = map(throttle, 0, 1023, 1000, 2000);
-  DEBUG_PRINT(String(throttle) + " = " + String(ppm) + "ms"); 
-	esc.writeMicroseconds(ppm);
+  if( rxSettings.controlMode == 0 ){
+    
+    esc.attach(throttlePin);
+    esc.writeMicroseconds( map(throttle, 0, 1023, 1000, 2000) );  
+  }
+  else if( rxSettings.controlMode == 1 ){
+
+    esc.attach(throttlePin);
+    esc.writeMicroseconds( map(throttle, 0, 1023, 1000, 2000) ); 
+
+  }
+  else if( rxSettings.controlMode == 2 ){
+    
+    uartControl.valYJoy = map(throttle, 0, 1023, 0, 255);
+    uartControl.valLowerButton = false;
+    esc.detach();
+    VescUartSetNunchukValues(uartControl);
+
+  }
 }
 
-/* Try to adjust cruiseThrottle with PID (not perfect, limited by low sample rate from UART) */
-void adjustCruise(){
-
-  float error = (returnData.rpm - cruiseSetpoint);
-  totalError += error;
-  
-  float adjust = (Kp * error) + (Ki * totalError) + (Kd * (error - prevError));
-  
-  cruiseThrottle = constrain(512 - (int)adjust, 0, 1023);
-  
-  prevError = error;
-  
-}
-
-void controlThrottle( uint16_t throttle , bool trigger )
+void speedControl( uint16_t throttle , bool trigger )
 {
 	// Kill switch
-	if( rxSettings.triggerMode == 0)
-	{
-		if ( trigger == true || throttle < 127 ) // We want to be able to brake even if the trigger is broken
-		{
+	if( rxSettings.triggerMode == 0 ){
+		if ( trigger == true || throttle < 512 ){
 			setThrottle( throttle );
 		}
-		else
-		{
+		else{
 			setThrottle( defaultThrottle );
 		}
 	}
 
 	// Cruise control
-	else if( rxSettings.triggerMode == 1)
-	{ 
-		if( trigger == true )
-		{
-			/* --- PPM only --- */
-			if( rxSettings.controlMode == 0){
-				// Keep current PPM value until trigger is released
-				if(cruising == false){
-					cruiseThrottle = throttle;
-					cruising = true;
-				}
-				
-			}
-			/* --- PPM and UART --- */
-			else if( rxSettings.controlMode == 1)
-			{
-				if(cruising == false){
-					cruiseSetpoint = (float)returnData.rpm;
-					cruising = true;
-				}
+	else if( rxSettings.triggerMode == 1 ){ 
+    if( trigger == true ){
+      
+      if( cruising == false ){
+        cruiseThrottle = throttle;
+        cruiseRPM = returnData.rpm;
+        cruising = true;
+      }
 
-				// While cruise control is active, try to achieve the same ERPM as just measured with PID 
-				if( uartCount > lastUartCount ) {
-
-          adjustCruise( );
-          lastUartCount = uartCount;
-         
-				}
-			}
-
-			setThrottle( cruiseThrottle );
-
-			#ifdef DEBUG
-				DEBUG_PRINT( "Cruise control throttle: " + (String)cruiseThrottle );
-			#endif
-		}
-		else
-		{
-			setThrottle( throttle );
-			cruising = false;
-		}
+      setCruise( true, cruiseThrottle );
+      
+    }else{
+      cruising = false;
+      setThrottle( throttle );
+    }
 	}
 } 
 
 void getUartData()
 {
-	if ( millis() - lastUartPull >= 10 ) {
+
+	if ( millis() - lastUartPull >= uartPullInterval ) {
 
 		lastUartPull = millis();
 
@@ -517,8 +514,6 @@ void getUartData()
 			returnData.inpVoltage		= uartData.inpVoltage;
 			returnData.rpm 				= uartData.rpm;
 			returnData.tachometerAbs 	= uartData.tachometerAbs;
-
-      uartCount++;
 		} 
 		else
 		{
@@ -554,11 +549,12 @@ String uint64ToAddress(uint64_t number)
 
 void setDefaultEEPROMSettings()
 {
-	DEBUG_PRINT("Loading default settings.");
-	for (int i = 0; i < numOfSettings; i++) {
+	for ( int i = 0; i < numOfSettings; i++ )
+	{
 		setSettingValue(i, settingRules[i][0]);
 	}
 
+  rxSettings.firmVersion = VERSION;
 	rxSettings.address = defaultAddress;
 	updateEEPROMSettings();
 }
@@ -586,7 +582,12 @@ void loadEEPROMSettings()
 		}
 	}
 
-	if (rewriteSettings == true)
+  if(rxSettings.firmVersion != VERSION){
+    
+    setDefaultEEPROMSettings();
+    
+  }
+	else if (rewriteSettings == true)
 	{
 		updateEEPROMSettings();
 	}
@@ -607,6 +608,8 @@ void setSettingValue(int index, uint64_t value)
 		case 0: rxSettings.triggerMode = value; break;
 		case 1: rxSettings.controlMode = value; break;
 		case 2: rxSettings.address = value;     break;
+    
+    default: /* Do nothing */ break;
 	}
 }
 
@@ -617,6 +620,8 @@ int getSettingValue(uint8_t index)
 	switch (index) {
 		case 0: value = rxSettings.triggerMode; break;
 		case 1: value = rxSettings.controlMode; break;
+    
+    default: /* Do nothing */ break;
 	}
 	return value;
 }

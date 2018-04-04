@@ -6,6 +6,8 @@
 
 // #define DEBUG
 
+#define VERSION 2.0
+
 #ifdef DEBUG
 	#define DEBUG_PRINT(x)  Serial.println (x)
 	#include "printf.h"
@@ -83,6 +85,7 @@ struct settings {
 	short centerHallValue;	// 9
 	short maxHallValue; 		// 10
 	uint64_t address; 		// 11
+  float firmVersion; 
 } txSettings;
 
 // Defining constants to hold the special settings, so it's easy changed thoughout the code
@@ -102,13 +105,13 @@ const uint8_t numOfSettings = 13;
 // Setting rules format: default, min, max.
 const short rules[numOfSettings][3] {
 	{0, 0, 1}, 		// 0: Killswitch 	| 1: Cruise control
-	{0, 0, 1}, 		// 0: Li-ion 		| 1: LiPo
+	{0, 0, 1}, 		// 0: Li-ion 		  | 1: LiPo
 	{10, 0, 12},	// Cell count
 	{10, 0, 12},	// Motor poles
 	{14, 0, 250},	// Motor pully
 	{40, 0, 250},	// Wheel pulley
 	{83, 0, 250},	// Wheel diameter
-	{1, 0, 1}, 		// 0: PPM only or 1: PPM and UART
+	{1, 0, 2}, 		// 0: PPM only   | 1: PPM and UART | 2: UART only
 	{200, 0, 1023},	// Min hall value
 	{500, 0, 1023},	// Center hall value
 	{800, 0, 1023},	// Max hall value
@@ -125,10 +128,10 @@ const char titles[numOfSettings][17] = {
 const uint8_t unitIdentifier[numOfSettings]  = {0,0,1,0,2,2,3,0,0,0,0,0,0};
 const uint8_t valueIdentifier[numOfSettings] = {1,2,0,0,0,0,0,3,0,0,0,0,0};
 
-const char stringValues[3][2][13] = {
-  {"Killswitch", "Cruise"},
-  {"Li-ion", "LiPo"},
-  {"PPM", "PPM and UART"},
+const char stringValues[3][3][13] = {
+  {"Killswitch", "Cruise", ""},
+  {"Li-ion", "LiPo", ""},
+  {"PPM", "PPM and UART", "UART only"},
 };
 
 const char settingUnits[3][3] = {"S", "T", "mm"};
@@ -149,7 +152,7 @@ const float refVoltage = 5.0;
 
 // Defining variables for Hall Effect throttle.
 uint16_t hallValue, throttle;
-uint8_t hallCenterMargin = 16;
+uint8_t hallCenterMargin = 20;
 uint8_t hallMenuMargin = 100;
 
 // Defining variables for NRF24 communication
@@ -182,8 +185,6 @@ bool signalBlink = false;
 uint8_t x, y;
 
 void setup() {
-
-  // setDefaultEEPROMSettings();
  
 	#ifdef DEBUG
 		Serial.begin(9600);
@@ -321,7 +322,7 @@ void controlSettingsMenu() {
 				// If we want to use the default address again
 				else if ( currentSetting == RESET )
 				{
-					// Generate new address
+					// Set the default address
 					setSettingValue( ADDRESS, defaultAddress );
 				}
 
@@ -344,6 +345,7 @@ void setDefaultEEPROMSettings() {
 		setSettingValue( i, rules[i][0] );
 	}
 
+  txSettings.firmVersion = VERSION;
 	txSettings.address = defaultAddress;
 	updateEEPROMSettings();
 }
@@ -370,12 +372,18 @@ void loadEEPROMSettings() {
 		}
 	}
 
-	if (rewriteSettings == true) {
+	if(txSettings.firmVersion != VERSION){
+    
+    setDefaultEEPROMSettings();
+    
+  }
+  else if (rewriteSettings == true) {
 		updateEEPROMSettings();
-	} else {
-		// Calculate constants
-		calculateRatios();
 	}
+	
+	// Calculate constants
+	calculateRatios();
+
 }
 
 // Write settings to the EEPROM then exiting settings menu.
@@ -409,6 +417,8 @@ short getSettingValue(uint8_t index) {
 		case 8: 		value = txSettings.minHallValue; 	  break;
 		case 9: 		value = txSettings.centerHallValue; break;
 		case 10: 		value = txSettings.maxHallValue; 	  break;
+
+    default: /* Do nothing */ break;
 	}
 	return value;
 }
@@ -668,7 +678,7 @@ float batteryPackPercentage( float voltage ){
 		minCellVoltage = 3.4;
 	}
 
-	float percentage = (100 - ( (maxCellVoltage * txSettings.batteryCells - voltage)/((maxCellVoltage - minCellVoltage)*10) ) * 100);
+	float percentage = (100 - ( (maxCellVoltage - voltage / txSettings.batteryCells)/((maxCellVoltage - minCellVoltage)) ) * 100);
 
 	if(percentage > 100.0){
 		return 100.0;  
