@@ -4,6 +4,7 @@
 #include <EEPROM.h>
 #include "RF24.h"
 
+// Uncomment DEBUG if you need to debug the remote
 // #define DEBUG
 
 #define VERSION 2.0
@@ -93,6 +94,7 @@ struct settings {
 #define MODE    7
 #define ADDRESS 11
 #define RESET 12
+#define EXIT 13
 
 // Defining variables to hold values for speed and distance calculation
 float gearRatio;
@@ -100,7 +102,7 @@ float ratioRpmSpeed;
 float ratioPulseDistance;
 
 uint8_t currentSetting = 0;
-const uint8_t numOfSettings = 13;
+const uint8_t numOfSettings = 14;
 
 // Setting rules format: default, min, max.
 const short rules[numOfSettings][3] {
@@ -112,21 +114,22 @@ const short rules[numOfSettings][3] {
 	{40, 0, 250},	// Wheel pulley
 	{83, 0, 250},	// Wheel diameter
 	{1, 0, 2}, 		// 0: PPM only   | 1: PPM and UART | 2: UART only
-	{200, 0, 1023},	// Min hall value
-	{500, 0, 1023},	// Center hall value
-	{800, 0, 1023},	// Max hall value
+	{200, 0, 300},	// Min hall value
+	{500, 300, 700},	// Center hall value
+	{800, 700, 1023},	// Max hall value
 	{-1, 0, 0}, 	  // Address
-	{-1, 0, 0} 	    // Set default address
+	{-1, 0, 0}, 	    // Set default address
+  {-1, 0, 0}
 };
 
 const char titles[numOfSettings][17] = {
   "Trigger use", "Battery type", "Battery cells", "Motor poles", "Motor pulley",
   "Wheel pulley", "Wheel diameter", "Control mode", "Throttle min", "Throttle center",
-  "Throttle max", "Generate address", "Reset address"
+  "Throttle max", "Generate address", "Reset address", "Settings"
 };
 
-const uint8_t unitIdentifier[numOfSettings]  = {0,0,1,0,2,2,3,0,0,0,0,0,0};
-const uint8_t valueIdentifier[numOfSettings] = {1,2,0,0,0,0,0,3,0,0,0,0,0};
+const uint8_t unitIdentifier[numOfSettings]  = {0,0,1,0,2,2,3,0,0,0,0,0,0,0};
+const uint8_t valueIdentifier[numOfSettings] = {1,2,0,0,0,0,0,3,0,0,0,0,0,0};
 
 const char stringValues[3][3][13] = {
   {"Killswitch", "Cruise", ""},
@@ -147,13 +150,19 @@ const uint8_t CS = 10;
 
 // Battery monitering
 const float minVoltage = 3.2;
-const float maxVoltage = 4.1;
+const float maxVoltage = 4.2;
 const float refVoltage = 5.0;
 
 // Defining variables for Hall Effect throttle.
 uint16_t hallValue, throttle;
-uint8_t hallCenterMargin = 20;
-uint8_t hallMenuMargin = 100;
+const uint16_t centerThrottle = 512;
+const uint8_t hallNoiseMargin = 5;
+const uint8_t hallMenuMargin = 100;
+uint8_t throttlePosition; 
+
+#define TOP 0
+#define MIDDLE 1
+#define BOTTOM 2
 
 // Defining variables for NRF24 communication
 const uint64_t defaultAddress = 0xE8E8F0F0E1LL;
@@ -165,27 +174,26 @@ short failCount;
 // Defining variables for OLED display
 String tString;
 uint8_t displayData = 0;
+uint8_t x, y;
 unsigned long lastSignalBlink;
 unsigned long lastDataRotation;
+bool signalBlink = false;
 
 // Instantiating RF24 object for NRF24 communication
 RF24 radio(CE, CS);
 
 // Defining variables for Settings menu
-bool changeSettings = false;
-bool changeThisSetting = false;
-bool settingsLoopFlag = false;
+bool changeSettings     = false; // Global flag for whether or not one is editing the settings
+bool changeThisSetting  = false;
+bool settingsLoopFlag   = false;
 bool settingsChangeFlag = false;
+bool settingScrollFlag  = false;
 bool settingsChangeValueFlag = false;
 unsigned short settingWaitDelay = 500;
-
-bool signalBlink = false;
-
-// Used to set position of graphics
-uint8_t x, y;
+unsigned short settingScrollWait = 800;
+unsigned long settingChangeMillis = 0;
 
 void setup() {
- 
 	#ifdef DEBUG
 		Serial.begin(9600);
     while (!Serial){};
@@ -198,9 +206,11 @@ void setup() {
 	pinMode(hallSensorPin, INPUT);
 	pinMode(batteryMeasurePin, INPUT);
 
+  // Start OLED operations
 	u8g2.begin();
 	drawStartScreen();
 
+  // Enter settings on startup if trigger is hold down
 	if (triggerActive()) {
 		changeSettings = true;
 		drawTitleScreen("Settings");
@@ -208,8 +218,6 @@ void setup() {
 
 	// Start radio communication
 	initiateTransmitter();
-
-  delay(500);
 }
 
 void loop() {
@@ -238,100 +246,96 @@ void loop() {
 // When called the throttle and trigger will be used to navigate and change settings
 void controlSettingsMenu() {
 
-	// If thumbwheel is in top position
-	if (hallValue >= (txSettings.centerHallValue + hallMenuMargin) && settingsLoopFlag == false) {
-		// Up
-		if (changeThisSetting == true) {
-			if(rules[currentSetting][0] != -1){
-				short val = getSettingValue(currentSetting) + 1;
-				
-				if (inRange(val, rules[currentSetting][1], rules[currentSetting][2])) {
-					setSettingValue(currentSetting, val);
-					settingsLoopFlag = true;
-				}
-			}
-		} else {
-			if (currentSetting != 0) {
-				currentSetting--;
-				settingsLoopFlag = true;
-			}
-		}
-	}
+	if (changeThisSetting == true) {
 
-	// If thumbwheel is in bottom position
-	else if (hallValue <= (txSettings.centerHallValue - hallMenuMargin) && settingsLoopFlag == false) {
-		// Down
-		if (changeThisSetting == true) {
-
-			if(rules[currentSetting][0] != -1){
-				short val = getSettingValue(currentSetting) - 1;
-	
-				if (inRange(val, rules[currentSetting][1], rules[currentSetting][2])) {
-					setSettingValue(currentSetting, val);
-					settingsLoopFlag = true;
-				}
+    if(currentSetting == EXIT){
+      changeSettings = false;  
+    }
+    
+    if (settingsLoopFlag == false && rules[currentSetting][0] != -1){
+      short value = getSettingValue(currentSetting);
+			if ( throttlePosition == TOP ) {
+				value++;
+			}else if( throttlePosition == BOTTOM ) {
+				value--;
 			}
 			
-		} else {
-			if (currentSetting < (numOfSettings - 1)) {
+			if (inRange(value, rules[currentSetting][1], rules[currentSetting][2])) {
+				setSettingValue(currentSetting, value);
+        if(settingChangeMillis == 0){
+          settingChangeMillis = millis();
+        }
+			}
+
+      if(settingScrollFlag == true){
+        settingsLoopFlag = false;
+        delay(20);
+      }else{
+        settingsLoopFlag = true;  
+      }
+    }
+    // If the throttle is at top or bottom for more than "settingScrollWait" allow the setting to change fast
+    if( millis() - settingChangeMillis >= settingScrollWait && settingChangeMillis != 0 ){
+      settingScrollFlag = true;
+      settingsLoopFlag = false;
+    }else{
+      settingScrollFlag = false;
+    }
+    
+	} else {
+    
+    if (settingsLoopFlag == false){
+			if (throttlePosition == TOP && currentSetting != 0) {
+				currentSetting--;
+				settingsLoopFlag = true;        
+			}else if(throttlePosition == BOTTOM && currentSetting < (numOfSettings - 1)) {
 				currentSetting++;
 				settingsLoopFlag = true;
 			}
-		}
-	}
+    }
+	}	
 
 	// If thumbwheel is in middle position
-	else if ( inRange( hallValue, (txSettings.centerHallValue - hallMenuMargin), (txSettings.centerHallValue + hallMenuMargin) ) ) {
+	if ( throttlePosition == MIDDLE ) {
 		settingsLoopFlag = false;
+    settingChangeMillis = 0;
 	}
 
-	// Update selected setting to the new value 
-	if ( triggerActive() )
-	{
-		if(settingsChangeFlag == false)
-		{
-			// Save settings to EEPROM
-			if (changeThisSetting == true)
-			{
-				// Settings that needs to be transmitted to the recevier
-				if( currentSetting == TRIGGER || currentSetting == MODE ){
-					if( ! transmitSetting( currentSetting, getSettingValue(currentSetting) ) ){
-						// Error! Load the old setting
-						loadEEPROMSettings();
-					}
-				}
+	if ( triggerActive() ){    
+    if (changeThisSetting == true){
+    	// Settings that needs to be transmitted to the recevier
+    	if( currentSetting == TRIGGER || currentSetting == MODE ){
+    		if( ! transmitSetting( currentSetting, getSettingValue(currentSetting) ) ){
+    			// Error! Load the old setting
+    			loadEEPROMSettings();
+    		}
+    	}
+    	// If new address is choosen
+    	else if ( currentSetting == ADDRESS ){
+    		// Generate new address
+    		uint64_t address = generateAddress();
+    
+    		if( transmitSetting( currentSetting, address ) ){
+    			setSettingValue(currentSetting, address);
+    			initiateTransmitter();
+    		}else{
+    			// Error! Load the old address
+    			loadEEPROMSettings();
+    		}
+    	}
+    	// If we want to use the default address again
+    	else if ( currentSetting == RESET ){
+    		// Set the default address
+    		setSettingValue( ADDRESS, defaultAddress );
+    	}
+    
+    	updateEEPROMSettings();
+    }
 
-				// If new address is choosen
-				else if ( currentSetting == ADDRESS )
-				{
-					// Generate new address
-					uint64_t address = generateAddress();
-
-					if( transmitSetting( currentSetting, address ) )
-					{
-						setSettingValue(currentSetting, address);
-						initiateTransmitter();
-					}
-					else
-					{
-						// Error! Load the old address
-						loadEEPROMSettings();
-					}
-				}
-
-				// If we want to use the default address again
-				else if ( currentSetting == RESET )
-				{
-					// Set the default address
-					setSettingValue( ADDRESS, defaultAddress );
-				}
-
-				updateEEPROMSettings();
-			}
-		  
+		if(settingsChangeFlag == false){
 			changeThisSetting = !changeThisSetting;
 			settingsChangeFlag = true;
-	    }
+	  }
 	} 
 	else 
 	{
@@ -629,17 +633,26 @@ void calculateThrottlePosition()
 	
 	if ( hallValue >= txSettings.centerHallValue )
 	{
-		throttle = constrain( map(hallValue, txSettings.centerHallValue, txSettings.maxHallValue, 512, 1023), 512, 1023 );
+		throttle = constrain( map(hallValue, txSettings.centerHallValue, txSettings.maxHallValue, centerThrottle, 1023), centerThrottle, 1023 );
 	} else {
-		throttle = constrain( map(hallValue, txSettings.minHallValue, txSettings.centerHallValue, 0, 512), 0, 512 );
+		throttle = constrain( map(hallValue, txSettings.minHallValue, txSettings.centerHallValue, 0, centerThrottle), 0, centerThrottle );
 	}
 
-  DEBUG_PRINT(String(throttle));
-
-	// removeing center noise
-	if ( abs(throttle - 512) < hallCenterMargin )
+	// Remove hall center noise
+	if ( abs(throttle - centerThrottle) < hallNoiseMargin )
 	{
-		throttle = 512;
+		throttle = centerThrottle;
+	}
+
+	// Find the throttle positions
+	if (throttle >= (centerThrottle + hallMenuMargin)) {
+		throttlePosition = TOP;
+	}
+	else if (throttle <= (centerThrottle - hallMenuMargin)) {
+		throttlePosition = BOTTOM;
+	}
+	else if ( inRange( throttle, (centerThrottle - hallMenuMargin), (centerThrottle + hallMenuMargin) ) ) {
+		throttlePosition = MIDDLE;
 	}
 }
 
@@ -733,6 +746,10 @@ void drawSettingsMenu() {
 	if( unitIdentifier[ currentSetting ] != 0 ){
 		tString += settingUnits[ unitIdentifier[ currentSetting ] - 1 ];
 	}
+
+  if( currentSetting == EXIT ){
+    tString = F("Exit");  
+  }
 
 	if ( changeThisSetting == true )
 	{
@@ -930,7 +947,7 @@ void drawBatteryLevel() {
 // Generate a random address for nrf24 communication
 uint64_t generateAddress()
 {
-  randomSeed( millis() );
+	randomSeed( millis() );
   
 	// Holding the address as char array
 	char temp[10];
@@ -1003,4 +1020,3 @@ char hexCharToBin(char c) {
 	}
 	return -1;
 }
-

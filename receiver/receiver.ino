@@ -174,7 +174,7 @@ void loop()
 	{
 		// Read and store the received package
 		radio.read( &remPackage, sizeof(remPackage) );
-		DEBUG_PRINT( uint64ToAddress(rxSettings.address) + " - New package: '" + (String)remPackage.type + "-" + (String)remPackage.throttle + "-" + (String)remPackage.trigger + "'" );
+		DEBUG_PRINT( "New package: '" + String(remPackage.type) + "-" + String(remPackage.throttle) + "-" + String(remPackage.trigger) + "'" );
     delay(10); 
     
 		if( remPackage.type <= 2 ){
@@ -227,8 +227,6 @@ void loop()
 	}
 	/* End timeout handling */
 }
-
-
 
 void setStatus(uint8_t code){
 
