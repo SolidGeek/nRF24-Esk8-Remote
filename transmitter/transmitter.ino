@@ -109,8 +109,8 @@ const short rules[numOfSettings][3] {
 	{0, 0, 1}, 		// 0: Killswitch 	| 1: Cruise control
 	{0, 0, 1}, 		// 0: Li-ion 		  | 1: LiPo
 	{10, 0, 12},	// Cell count
-	{10, 0, 12},	// Motor poles
-	{14, 0, 250},	// Motor pully
+	{14, 0, 250},	// Motor poles
+	{15, 0, 250},	// Motor pully
 	{40, 0, 250},	// Wheel pulley
 	{83, 0, 250},	// Wheel diameter
 	{1, 0, 2}, 		// 0: PPM only   | 1: PPM and UART | 2: UART only
