@@ -6,6 +6,7 @@
 
 // #define DEBUG
 
+#define FIREFLYPCB // If receiver is based on the receiver PCB
 #define VERSION 2.0
 
 #ifdef DEBUG
@@ -75,7 +76,7 @@ bool recievedData = false;
 
 // Last time data was pulled from VESC
 unsigned long lastUartPull;
-uint8_t uartPullInterval = 100;
+uint8_t uartPullInterval = 500;
 
 // Cruise control
 uint16_t cruiseThrottle;
@@ -98,7 +99,13 @@ const short timeoutMax = 500;
 // Defining receiver pins
 const uint8_t CE = 9;
 const uint8_t CS = 10;
-const uint8_t statusLedPin = 6;
+
+#ifdef FIREFLYPCB
+  const uint8_t statusLedPin = 13;
+#else
+  const uint8_t statusLedPin = 6;
+#endif
+
 const uint8_t throttlePin = 5;
 const uint8_t resetAddressPin = 4;
 
@@ -117,9 +124,15 @@ void setup()
 		printf_begin();
 	#else
 		// Using RX and TX to get VESC data
-		SetSerialPort(&Serial);
-		Serial.begin(115200);
+    SetSerialPort(&Serial);
+    Serial.begin(115200);
 	#endif
+
+  #ifdef FIREFLYPCB
+    // Uses the Atmega32u4 that has a seperate UART port
+    SetSerialPort(&Serial1);
+    Serial1.begin(115200);
+  #endif
 
 	loadEEPROMSettings();
 	initiateReceiver();
