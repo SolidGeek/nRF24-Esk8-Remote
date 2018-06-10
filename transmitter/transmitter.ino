@@ -156,7 +156,7 @@ const float refVoltage = 5.0;
 // Defining variables for Hall Effect throttle.
 uint16_t hallValue, throttle;
 const uint16_t centerThrottle = 512;
-const uint8_t hallNoiseMargin = 5;
+const uint8_t hallNoiseMargin = 8;
 const uint8_t hallMenuMargin = 100;
 uint8_t throttlePosition; 
 

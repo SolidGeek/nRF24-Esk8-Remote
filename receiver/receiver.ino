@@ -1,4 +1,4 @@
-#include <SPI.h>
+ #include <SPI.h>
 #include <EEPROM.h>
 #include <Servo.h>
 #include "RF24.h"
@@ -6,7 +6,7 @@
 
 // #define DEBUG
 
-#define FIREFLYPCB // If receiver is based on the receiver PCB
+// #define FIREFLYPCB // If receiver is based on the receiver PCB
 #define VERSION 2.0
 
 #ifdef DEBUG
@@ -119,19 +119,23 @@ void setup()
 {
 
 	#ifdef DEBUG
+    SetDebugSerialPort(&Serial);
 		Serial.begin(115200);
 		DEBUG_PRINT("** Esk8-remote receiver **");
 		printf_begin();
 	#else
-		// Using RX and TX to get VESC data
-    SetSerialPort(&Serial);
-    Serial.begin(115200);
+    #ifndef FIREFLYPCB
+		  // Using RX and TX to get VESC data
+      SetSerialPort(&Serial);
+      Serial.begin(115200);
+    #endif
 	#endif
 
   #ifdef FIREFLYPCB
     // Uses the Atmega32u4 that has a seperate UART port
     SetSerialPort(&Serial1);
-    Serial1.begin(115200);
+    // Uses lower baud rate, since it runs on 8Mhz (115200 baud is to high).
+    Serial1.begin(19200);
   #endif
 
 	loadEEPROMSettings();
@@ -209,10 +213,15 @@ void loop()
 			
 			if( rxSettings.controlMode != 0 ){
 				#ifdef DEBUG
-					DEBUG_PRINT("Getting VESC data");
+				  DEBUG_PRINT("Getting VESC data");
+
+          #ifdef FIREFLYPCB
+            getUartData();
+          #endif
 				#else
-					getUartData();
-				#endif
+          getUartData();
+        #endif
+        
 			}
 
 			// The next time a transmission is received, the returnData will be sent back in acknowledgement 
@@ -517,6 +526,8 @@ void getUartData()
 	if ( millis() - lastUartPull >= uartPullInterval ) {
 
 		lastUartPull = millis();
+
+    DEBUG_PRINT("Getting the DATA");
 
 		// Only get what we need
 		if ( VescUartGetValue(uartData) )
