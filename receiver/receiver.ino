@@ -1,4 +1,4 @@
- #include <SPI.h>
+#include <SPI.h>
 #include <EEPROM.h>
 #include <Servo.h>
 #include "RF24.h"
@@ -76,7 +76,7 @@ bool recievedData = false;
 
 // Last time data was pulled from VESC
 unsigned long lastUartPull;
-uint8_t uartPullInterval = 500;
+uint16_t uartPullInterval = 250;
 
 // Cruise control
 uint16_t cruiseThrottle;

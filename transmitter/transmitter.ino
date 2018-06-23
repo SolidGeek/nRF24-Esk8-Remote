@@ -149,14 +149,14 @@ const uint8_t CE = 9;
 const uint8_t CS = 10;
 
 // Battery monitering
-const float minVoltage = 3.2;
+const float minVoltage = 3.1;
 const float maxVoltage = 4.2;
 const float refVoltage = 5.0;
 
 // Defining variables for Hall Effect throttle.
 uint16_t hallValue, throttle;
 const uint16_t centerThrottle = 512;
-const uint8_t hallNoiseMargin = 8;
+const uint8_t hallNoiseMargin = 10;
 const uint8_t hallMenuMargin = 100;
 uint8_t throttlePosition; 
 
@@ -179,21 +179,22 @@ unsigned long lastSignalBlink;
 unsigned long lastDataRotation;
 bool signalBlink = false;
 
-// Instantiating RF24 object for NRF24 communication
-RF24 radio(CE, CS);
-
 // Defining variables for Settings menu
 bool changeSettings     = false; // Global flag for whether or not one is editing the settings
 bool changeThisSetting  = false;
 bool settingsLoopFlag   = false;
-bool settingsChangeFlag = false;
+bool triggerFlag = false;
 bool settingScrollFlag  = false;
 bool settingsChangeValueFlag = false;
 unsigned short settingWaitDelay = 500;
 unsigned short settingScrollWait = 800;
 unsigned long settingChangeMillis = 0;
 
+// Instantiating RF24 object for NRF24 communication
+RF24 radio(CE, CS);
+
 void setup() {
+
 	#ifdef DEBUG
 		Serial.begin(9600);
     while (!Serial){};
@@ -243,7 +244,9 @@ void loop() {
 	updateMainDisplay();
 }
 
-// When called the throttle and trigger will be used to navigate and change settings
+/*
+ * Uses the throttle and trigger to navigate and change settings
+ */
 void controlSettingsMenu() {
 
 	if (changeThisSetting == true) {
@@ -301,8 +304,8 @@ void controlSettingsMenu() {
     settingChangeMillis = 0;
 	}
 
-	if ( triggerActive() ){    
-    if (changeThisSetting == true){
+	if ( triggerActive() ){ 
+    if (changeThisSetting == true && triggerFlag == false){
     	// Settings that needs to be transmitted to the recevier
     	if( currentSetting == TRIGGER || currentSetting == MODE ){
     		if( ! transmitSetting( currentSetting, getSettingValue(currentSetting) ) ){
@@ -332,17 +335,20 @@ void controlSettingsMenu() {
     	updateEEPROMSettings();
     }
 
-		if(settingsChangeFlag == false){
+		if(triggerFlag == false){
 			changeThisSetting = !changeThisSetting;
-			settingsChangeFlag = true;
+			triggerFlag = true;
 	  }
 	} 
 	else 
 	{
-		settingsChangeFlag = false;
+		triggerFlag = false;
 	}
 }
 
+/*
+ * Save the default settings in the EEPROM
+ */
 void setDefaultEEPROMSettings() {
 	for ( uint8_t i = 0; i < numOfSettings; i++ )
 	{
@@ -354,6 +360,9 @@ void setDefaultEEPROMSettings() {
 	updateEEPROMSettings();
 }
 
+/*
+ * Load saved settings from the EEPROM to the settings struct
+ */
 void loadEEPROMSettings() {
 	// Load settings from EEPROM to custom struct
 	EEPROM.get(0, txSettings);
@@ -390,13 +399,17 @@ void loadEEPROMSettings() {
 
 }
 
-// Write settings to the EEPROM then exiting settings menu.
+/* 
+ * Write settings to the EEPROM then exiting settings menu.
+ */
 void updateEEPROMSettings() {
 	EEPROM.put(0, txSettings);
 	calculateRatios();
 }
 
-// Update values used to calculate speed and distance travelled.
+/*
+ * Update values used to calculate speed and distance travelled.
+ */
 void calculateRatios() {
 	// Gearing ratio
 	gearRatio = (float)txSettings.motorPulley / (float)txSettings.wheelPulley; 
@@ -406,7 +419,9 @@ void calculateRatios() {
 	ratioPulseDistance = (gearRatio * (float)txSettings.wheelDiameter * 3.14156) / (((float)txSettings.motorPoles * 3) * 1000000); 
 }
 
-// Get settings value by index (usefull when iterating through settings).
+/* 
+ * Get settings value by index (usefull when iterating through settings)
+ */
 short getSettingValue(uint8_t index) {
 	short value;
 	switch (index) {
@@ -427,7 +442,9 @@ short getSettingValue(uint8_t index) {
 	return value;
 }
 
-// Set a value of a specific setting by index.
+/* 
+ * Set a value of a specific setting by index.
+ */
 void setSettingValue(uint8_t index, uint64_t value) {
 	switch (index) {
 		case TRIGGER: 	txSettings.triggerMode = value; 	  break;
@@ -447,12 +464,16 @@ void setSettingValue(uint8_t index, uint64_t value) {
 	}
 }
 
-// Check if an integer is within a min and max value
+/*
+ * Check if an integer is within a min and max value
+ */ 
 bool inRange(short val, short minimum, short maximum) {
 	return ((minimum <= val) && (val <= maximum));
 }
 
-// Return true if trigger is activated, false otherwice
+/* 
+ * Return true if trigger is activated, false otherwice
+ */ 
 bool triggerActive() {
 	if (digitalRead(triggerPin) == LOW)
 		return true;
@@ -460,7 +481,9 @@ bool triggerActive() {
 		return false;
 }
 
-// Function used to transmit the remPackage and receive auto acknowledgement.
+/*
+ * Function used to transmit the remPackage and receive auto acknowledgement.
+ */
 void transmitToReceiver(){
 	// Transmit once every 50 millisecond
 	if ( millis() - lastTransmission >= 50 ) {
@@ -497,6 +520,10 @@ void transmitToReceiver(){
 	}
 }
 
+
+/*
+ * Transmit a specific setting to the receiver, so both devices has same configuration
+ */
 bool transmitSetting(uint8_t setting, uint64_t value){
   
 	uint64_t returnedValue;
@@ -549,7 +576,6 @@ bool transmitSetting(uint8_t setting, uint64_t value){
 		}
 	}
 
-
 	// Check if the receiver Acknowledgement data is matching
 	if( ackRecieved && setPackage.setting == setting && setPackage.value == value ){
 
@@ -585,6 +611,9 @@ bool transmitSetting(uint8_t setting, uint64_t value){
 
 }
 
+/*
+ * Initiate the nRF24 module, needed to reinitiate the nRF24 after address change
+ */
 void initiateTransmitter(){
 
 	radio.begin();
@@ -595,11 +624,15 @@ void initiateTransmitter(){
 	radio.openWritingPipe( txSettings.address );
 
 	#ifdef DEBUG
-	radio.printDetails();
+	  radio.printDetails();
 	#endif
 
 }
 
+/*
+ * Update the OLED for each loop
+ * To-Do: Only update display when needed
+ */
 void updateMainDisplay()
 {
 	u8g2.firstPage();
@@ -619,17 +652,21 @@ void updateMainDisplay()
 	} while ( u8g2.nextPage() );
 }
 
+/*
+ * Measure the hall sensor output and calculate throttle posistion
+ */
 void calculateThrottlePosition()
 {
 	// Hall sensor reading can be noisy, lets make an average reading.
-	unsigned short total = 0;
+	uint16_t total = 0;
+  uint8_t samples = 20;
 
-	for ( uint8_t i = 0; i < 10; i++ )
+	for ( uint8_t i = 0; i < samples; i++ )
 	{
 		total += analogRead(hallSensorPin);
 	}
 
-	hallValue = total / 10;
+	hallValue = total / samples;
 	
 	if ( hallValue >= txSettings.centerHallValue )
 	{
@@ -656,26 +693,32 @@ void calculateThrottlePosition()
 	}
 }
 
-// Function used to indicate the remotes battery level.
+/* 
+ * Calculate the remotes battery level
+ */ 
 uint8_t batteryLevel() {
 
-  unsigned short total = 0;
+  uint16_t total = 0;
+  uint8_t samples = 5;
 
-  for (uint8_t i = 0; i < 10; i++) {
+  for (uint8_t i = 0; i < samples; i++) {
     total += analogRead(batteryMeasurePin);
   }
 
-	float voltage = (refVoltage / 1024.0) * ((float)total / 10.0);
+	float voltage = (refVoltage / 1024.0) * ( (float)total / (float)samples );
 
 	if (voltage <= minVoltage) {
 		return 0;
 	} else if (voltage >= maxVoltage) {
 		return 100;
-	} else {
-		return (voltage - minVoltage) * 100 / (maxVoltage - minVoltage);
-	}
+	} 
+	
+	return (voltage - minVoltage) * 100 / (maxVoltage - minVoltage);
 }
 
+/*
+ * Calculate the battery level of the board based on the telemetry voltage
+ */
 float batteryPackPercentage( float voltage ){
 
 	float maxCellVoltage = 4.2;
@@ -683,7 +726,7 @@ float batteryPackPercentage( float voltage ){
 
 	if(txSettings.batteryType == 0){
 		// Li-ion
-		minCellVoltage = 2.8; 
+		minCellVoltage = 3.1; 
 	}
 	else
 	{
@@ -697,11 +740,15 @@ float batteryPackPercentage( float voltage ){
 		return 100.0;  
 	}else if (percentage < 0.0){
 		return 0.0;
-	}else{
-		return percentage;
 	}
+	
+	return percentage;
+	
 }
 
+/*
+ * Prints the settings menu on the OLED display
+ */
 void drawSettingsMenu() {
 	// Local variables to store the setting value and unit
 	uint64_t value;
@@ -767,6 +814,9 @@ void drawSettingsMenu() {
 	}
 }
 
+/*
+ * Print the startup screen 
+ */
 void drawStartScreen() {
 	u8g2.firstPage();
  
@@ -782,6 +832,9 @@ void drawStartScreen() {
   delay(1500);
 }
 
+/*
+ * Print a title on the OLED display
+ */
 void drawTitleScreen(String title) {
 	u8g2.firstPage();
  
@@ -794,12 +847,14 @@ void drawTitleScreen(String title) {
 	delay(1500);
 }
 
-
+/*
+ * Print the main page: Throttle, battery level and telemetry
+ */
 void drawPage() {
 	uint8_t decimals;
 	float value;
 
-	short first, last;
+	uint16_t first, last;
 
 	x = 0;
 	y = 16;
@@ -819,15 +874,15 @@ void drawPage() {
 		case 0:
 			value = ratioRpmSpeed * returnData.rpm;
 			decimals = 1;
-		break;
+		  break;
 		case 1:
 			value = ratioPulseDistance * returnData.tachometerAbs;
 			decimals = 2;
-		break;
+		  break;
 		case 2:
 			value = batteryPackPercentage( returnData.inpVoltage );
 			decimals = 1;
-		break;
+		  break;
 	}
 
 	// Display prefix (title)
@@ -836,7 +891,7 @@ void drawPage() {
 
 	// Split up the float value: a number, b decimals.
 	first = abs( floor(value) );
-	last = value * pow(10, 3) - first * pow(10, 3);
+	last = (value-first) * pow(10,decimals);
 
 	// Add leading zero
 	if ( first <= 9 ) {
@@ -850,6 +905,10 @@ void drawPage() {
 
 	// Display decimals
 	tString = ".";
+  if ( last <= 9 && decimals > 1) {
+    tString += "0";
+  } 
+  
 	tString += last;
 	drawString(tString, decimals + 2, x + 86, y - 1, u8g2_font_profont12_tr);
 
@@ -858,6 +917,9 @@ void drawPage() {
 	u8g2.drawStr(x + 88, y + 13, dataSuffix[ displayData ] );
 }
 
+/*
+ * Prepare a string to be displayed on the OLED 
+ */
 void drawString(String string, uint8_t lenght, uint8_t x, uint8_t y, const uint8_t *font){
 
 	static char cache[20];
@@ -869,6 +931,9 @@ void drawString(String string, uint8_t lenght, uint8_t x, uint8_t y, const uint8
 
 }
 
+/*
+ * Print the throttle value as a bar on the OLED
+ */
 void drawThrottle() {
 	
 	x = 0;
@@ -900,8 +965,11 @@ void drawThrottle() {
 	}
 }
 
+/*
+ * Print the signal icon if connected, and flash the icon if not connected
+ */
 void drawSignal() {
-	// Position on OLED
+
 	x = 114;
 	y = 17;
 
@@ -925,8 +993,11 @@ void drawSignal() {
 	}
 }
 
+/*
+ * Print the remotes battery level as a battery on the OLED
+ */
 void drawBatteryLevel() {
-	// Position on OLED
+
 	x = 108; 
 	y = 4;
 
@@ -944,7 +1015,9 @@ void drawBatteryLevel() {
 	}
 }
 
-// Generate a random address for nrf24 communication
+/* 
+ * Generate a random address for nrf24 communication
+ */
 uint64_t generateAddress()
 {
 	randomSeed( millis() );
@@ -997,7 +1070,9 @@ String uint64ToAddress(uint64_t number)
 	return String(part1, HEX) + String(part2, HEX);
 }
 
-// Convert hex String to uint64_t: http://forum.arduino.cc/index.php?topic=233813.0
+/* 
+ * Convert hex String to uint64_t: http://forum.arduino.cc/index.php?topic=233813.0
+ */
 uint64_t StringToUint64( char * string ){
 	uint64_t x = 0;
 	char c;
