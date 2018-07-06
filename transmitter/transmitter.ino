@@ -786,7 +786,7 @@ void drawSettingsMenu() {
 		if(currentSetting == ADDRESS || currentSetting == RESET){
 			tString = uint64ToAddress(value);
 		}else{
-			tString = uint64ToString(value);
+			tString = String(value);
 		}
 	}
 
