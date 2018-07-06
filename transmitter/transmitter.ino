@@ -1053,13 +1053,16 @@ uint64_t generateAddress()
 
 String uint64ToString(uint64_t number)
 {
-	unsigned long part1 = (unsigned long)((number >> 32)); // Bitwise Right Shift
-	unsigned long part2 = (unsigned long)((number));
-
-	if(part1 == 0){
-	  return String(part2, DEC);
-	}
-	return String(part1, DEC) + String(part2, DEC);
+	String result = "";
+  	uint8_t base = 10;
+	
+	do {
+		char c = (input % base) + '0';
+		input /= base;
+		result += c;
+	} while (input);
+	
+  	return result;
 }
 
 String uint64ToAddress(uint64_t number)
