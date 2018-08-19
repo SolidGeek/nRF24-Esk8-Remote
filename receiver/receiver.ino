@@ -17,10 +17,10 @@
 #endif
 
 // Transmit and receive package
-struct package {		// | Normal 	| Setting 	| Confirm
-	uint8_t type;		// | 0 			| 1 		| 2
-	uint16_t throttle;	// | Throttle 	| ---		| ---
-	uint8_t trigger;	// | Trigger 	| --- 		| ---
+struct package {		  // | Normal 	| Setting 	| Confirm
+	uint8_t type;		    // | 0 			  | 1 		    | 2
+	uint16_t throttle;	// | Throttle | ---		    | ---
+	uint8_t trigger;	  // | Trigger 	| --- 		  | ---
 } remPackage;
 
 #define NORMAL 0
@@ -48,10 +48,6 @@ struct settings {
 	uint64_t address;    // Listen on this address
   float firmVersion;   
 } rxSettings;
-
-// Struct used to store UART data
-struct bldcMeasure uartData;
-struct remotePackage uartControl; 
 
 const uint8_t numOfSettings = 4;
 // Setting rules format: default, min, max.
@@ -115,25 +111,27 @@ RF24 radio(CE, CS);
 // Initiate Servo class
 Servo esc;
 
+// Initiate VescUart class for UART communication
+VescUart UART;
+
 void setup()
 {
-
 	#ifdef DEBUG
-    SetDebugSerialPort(&Serial);
+    UART.setDebugPort(&Serial);
 		Serial.begin(115200);
 		DEBUG_PRINT("** Esk8-remote receiver **");
 		printf_begin();
 	#else
     #ifndef FIREFLYPCB
 		  // Using RX and TX to get VESC data
-      SetSerialPort(&Serial);
+      UART.setSerialPort(&Serial);
       Serial.begin(115200);
     #endif
 	#endif
 
   #ifdef FIREFLYPCB
     // Uses the Atmega32u4 that has a seperate UART port
-    SetSerialPort(&Serial1);
+    UART.setSerialPort(&Serial1);
     // Uses lower baud rate, since it runs on 8Mhz (115200 baud is to high).
     Serial1.begin(19200);
   #endif
@@ -146,12 +144,6 @@ void setup()
 	esc.attach(throttlePin);
 
 	DEBUG_PRINT("Setup complete - begin listening");
-  
-  uartControl.valXJoy         = 127;
-  uartControl.valYJoy         = 127;
-  uartControl.valLowerButton  = false;
-  uartControl.valLowerButton  = false;
-
 }
 
 void loop()
@@ -446,21 +438,21 @@ void setCruise ( bool cruise = true, uint16_t setPoint = defaultThrottle ){
   else if( rxSettings.controlMode == 2 ){
 
     // Setpoint not used (PID by VESC)
-    uartControl.valLowerButton = cruise;
+    UART.nunchuck.lowerButton = cruise;
     esc.detach();
 
     // Make sure the motor doesn't begin to spin wrong way under high load (and don't allow cruise backwards)
     if( returnData.rpm < 0 ){
 
-      uartControl.valLowerButton = false;
-      uartControl.valYJoy = 128;
-      VescUartSetNunchukValues(uartControl);
-      VescUartSetCurrent( 0.0 );
+      UART.nunchuck.lowerButton = false;
+      UART.nunchuck.valueY = 127;
+      UART.setNunchuckValues();
+      UART.setCurrent(0.0);
  
     } else{
 
-      uartControl.valYJoy = 128;
-      VescUartSetNunchukValues(uartControl);
+      UART.nunchuck.valueY = 127;
+      UART.setNunchuckValues();
       
     }
   }
@@ -481,10 +473,10 @@ void setThrottle( uint16_t throttle )
   }
   else if( rxSettings.controlMode == 2 ){
     
-    uartControl.valYJoy = map(throttle, 0, 1023, 0, 255);
-    uartControl.valLowerButton = false;
+    UART.nunchuck.valueY = map(throttle, 0, 1023, 0, 255);
+    UART.nunchuck.lowerButton = false;
     esc.detach();
-    VescUartSetNunchukValues(uartControl);
+    UART.setNunchuckValues();
 
   }
 }
@@ -530,19 +522,19 @@ void getUartData()
     DEBUG_PRINT("Getting the DATA");
 
 		// Only get what we need
-		if ( VescUartGetValue(uartData) )
+		if ( UART.getVescValues() )
 		{
-			returnData.ampHours 		= uartData.ampHours;
-			returnData.inpVoltage		= uartData.inpVoltage;
-			returnData.rpm 				= uartData.rpm;
-			returnData.tachometerAbs 	= uartData.tachometerAbs;
+			returnData.ampHours 		  = UART.data.ampHours;
+			returnData.inpVoltage		  = UART.data.inpVoltage;
+			returnData.rpm 				    = UART.data.rpm;
+			returnData.tachometerAbs 	= UART.data.tachometerAbs;
 		} 
 		else
 		{
-			returnData.ampHours 		= 0.0;
-			returnData.inpVoltage 		= 0.0;
-			returnData.rpm 				= 0;
-			returnData.tachometerAbs 	= 0;
+			returnData.ampHours 		  = 0.0;
+			returnData.inpVoltage     = 0.0;
+			returnData.rpm 				    = 0;
+			returnData.tachometerAbs  = 0;
 		}
 	}
 }
