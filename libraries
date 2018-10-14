@@ -1,5 +1,0 @@
-The libraries used in this sketch where downloaded through the Arduino IDE, or found elsewhere on the internet. 
-
-1. RF24 (downloadable through Arduino IDE)
-2. U8g2 (downloadable through Arduino IDE)
-3. VescUartControl-VESC6 (https://github.com/RollingGecko/VescUartControl/tree/VESC6)
