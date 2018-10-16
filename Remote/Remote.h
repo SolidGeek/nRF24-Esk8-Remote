@@ -1,25 +1,32 @@
 #ifndef _REMOTE_h
 #define _REMOTE_h
 
+/* Including Arduino.h for making the class compilablie*/
 #include <Arduino.h>
+#include <Wire.h>
+
+#include "constants.h"
 #include "RemoteDisplay.h"
 #include "RemoteSettings.h"
-#include "constants.h"
 
-class Remote{
 
-struct package {		// | Normal 	| Setting 	| Acknowledgement
+class Remote
+{
+
+public: 
+
+	struct package {		// | Normal 	| Setting 	| Acknowledgement
 		uint8_t type;		// | 0 			| 1			| 2
 		uint16_t throttle;	// | Throttle 	| Number    | 0
 		uint64_t payload;	// | Verify		| Value		| Value
 	};
 
-public: 
-
 	RemoteDisplay display;
-	RemoteSettings settings;
+	// RemoteSettings settings;
 
-	Remote(void);
+	Remote( void );
+
+  void begin( void );
 
 	bool upperTrigger( void );
 

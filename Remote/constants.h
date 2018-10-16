@@ -115,5 +115,6 @@ const uint8_t HALL_MENU_MARGIN = 100;
 const uint64_t DEFAULT_PIPE 	= 0xE8E8F0F0E1LL;
 const uint8_t DEFAULT_CHANNEL 	= 108;
 
+class Remote;
 
 #endif

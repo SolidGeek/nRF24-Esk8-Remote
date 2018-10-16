@@ -1,8 +1,14 @@
 #include "Remote.h"
 
+Remote::Remote(void){
 
-Remote::Remote(void){}
+  display.initiate(this);
+  // settings.initiate(this);
+}
 
+void Remote::begin(void){
+  display.begin();
+}
 
 uint8_t Remote::batteryPercentage(void){
 
@@ -39,34 +45,6 @@ void Remote::measureHallOutput(void){
 
   // Smooths the hallValue with a filter
   hallValue = EMA(mean, hallValue, 0.35);
-
-  
-
-  /* 
-  if ( hallValue >= txSettings.centerHallValue )
-  {
-    throttle = constrain( map(hallValue, txSettings.centerHallValue, txSettings.maxHallValue, centerThrottle, 1023), centerThrottle, 1023 );
-  } else {
-    throttle = constrain( map(hallValue, txSettings.minHallValue, txSettings.centerHallValue, 0, centerThrottle), 0, centerThrottle );
-  }
-  
-  // Remove hall center noise
-  if ( abs(throttle - THROTTLE_CENTER) < hallNoiseMargin )
-  {
-    throttle = THROTTLE_CENTER;
-  }
-  
-  // Find the throttle positions
-  if (throttle >= (centerThrottle + hallMenuMargin)) {
-    throttlePosition = TOP;
-  }
-  else if (throttle <= (centerThrottle - hallMenuMargin)) {
-    throttlePosition = BOTTOM;
-  }
-  else if ( inRange( throttle, (centerThrottle - hallMenuMargin), (centerThrottle + hallMenuMargin) ) ) {
-    throttlePosition = MIDDLE;
-  }
-  */
 
 }
 

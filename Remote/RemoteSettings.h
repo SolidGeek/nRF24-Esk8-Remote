@@ -1,9 +1,11 @@
 #ifndef _REMOTE_SETTINGS_h
 #define _REMOTE_SETTINGS_h
 
+#include <Arduino.h>
 #include "constants.h"
 
-class RemoteSettings{
+class RemoteSettings
+{
 
 public:
 
@@ -34,11 +36,18 @@ public:
 
 	RemoteSettings( void );
 
-	RemoteSettings::setDefaultSettings( void );
+	void initiate( Remote * _pointer );
 
-	RemoteSettings::loadSettings( void );
+	void setDefaultSettings( void );
 
-	RemoteSettings::updateSettings( void );
+	void loadSettings( void );
+
+	void saveSettings( void );
+
+private:
+
+	/* Reference to the main object */
+	Remote * pointer;
 
 };
 
