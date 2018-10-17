@@ -3,16 +3,17 @@
 Remote Remote;
 
 void setup() {
+  
   Serial.begin(9600);
-
   Remote.begin();
+  
 }
 
 void loop() {
   
-  Remote.display.update();
+  // Remote.Display.update();
 
-  delay(100);
+  Serial.println( Remote.getThrottle() );
   
 }
 

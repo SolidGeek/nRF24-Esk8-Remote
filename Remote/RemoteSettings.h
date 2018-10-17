@@ -2,6 +2,7 @@
 #define _REMOTE_SETTINGS_h
 
 #include <Arduino.h>
+#include <EEPROM.h>
 #include "constants.h"
 
 class RemoteSettings
@@ -28,26 +29,31 @@ public:
 	uint8_t pulleyMotor;
 	uint8_t pulleyWheel;
 	uint8_t wheelDiameter;
-	bool autoTurnoff;
 	uint8_t autoTurnoffTime;
 
+  uint16_t versionNum;
 
+public:
 	/* Settings functions */
 
 	RemoteSettings( void );
 
-	void initiate( Remote * _pointer );
+	void init( Remote * _pointer );
 
-	void setDefaultSettings( void );
+  void setValue( uint8_t index, uint16_t value );
 
-	void loadSettings( void );
+  uint16_t getValue( uint8_t index );
 
-	void saveSettings( void );
+	void reset( void );
 
-private:
+	void load( void );
 
-	/* Reference to the main object */
-	Remote * pointer;
+	void save( void );
+
+  bool inRange( uint16_t value, uint8_t index );
+
+  void printSettings( void );
+
 
 };
 

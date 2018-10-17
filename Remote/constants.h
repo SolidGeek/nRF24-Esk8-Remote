@@ -8,14 +8,25 @@ const uint8_t charging_icon[] = {
   0xFF, 0x07, 0x00, 0xF0, 0x07, 0x00, 0x80, 0x0F, 0x00, 0x00, 0x0C, 0x00, 
 };
 
+const uint8_t firefly_icon[] = {
+  0x00, 0x00, 0x04, 0x00, 0x00, 0x04, 0x80, 0x03, 0x06, 0xF0, 0x9F, 0x03, 
+  0x7C, 0xFC, 0x77, 0x0E, 0xE0, 0x1C, 0x03, 0xB0, 0x0D, 0x07, 0x30, 0x0F, 
+  0x0E, 0x18, 0x06, 0x38, 0x98, 0x07, 0xF0, 0xFF, 0x0D, 0xC0, 0x7F, 0x0C, 
+  0xC0, 0x18, 0x0C, 0xA0, 0x19, 0x18, 0xA0, 0x1B, 0x18, 0x60, 0x1F, 0x18, 
+  0xC0, 0x1C, 0x0C, 0x80, 0x33, 0x0C, 0x00, 0x30, 0x0C, 0x00, 0x60, 0x06, 
+  0x00, 0xC0, 0x06, 0x00, 0xC0, 0x03, 0x00, 0x80, 0x01
+};
+
 /** ======= Settings ======= **/
 
-const uint8_t SETTINGS_COUNT = 19;
+const uint16_t SETTINGS_VERSION = 124;
+
+const uint8_t SETTINGS_COUNT = 18;
 const uint16_t SETTING_WAIT = 500;
 const uint16_t SETTING_SCROLL_DELAY = 800;
 
 // Setting rules format: default, min, max.
-const short RULES[SETTINGS_COUNT][3] {
+const short SETTINGS_RULES[SETTINGS_COUNT][3] {
 	{0, 	0, 	2},		// Mode: 			0-2 	(0:PPM 			| 1:PPM and UART 	| 2:UART) 
 	{0, 	0, 	1},		// Orientation: 	0-1 	(0:Left handed 	| 1:Right handed)
 	{2, 	0, 	2},		// Top trigger: 	0-2 	(0:Disabled 	| 1:Killswitch 		| 2: Cruise)
@@ -26,15 +37,14 @@ const short RULES[SETTINGS_COUNT][3] {
 	{5, 	0, 	100},	// Deadzone:		0-100	(percentage)
 	{0, 	0, 	100},	// Throttle limit:	0-100	(percentage of throttle)
 	{0, 	0, 	100},	// Brake limit:		0-100	(percentage of braking)
-	{10, 	0, 	20},	// Battery cells:	0-20	(number of cells)
+	{10, 	1, 	20},	// Battery cells:	1-20	(number of cells)
 	{280, 	0, 	500},	// Min voltage:		0-500	(centivolt, divide by 100 to get voltage)
 	{420, 	0, 	500},	// Max voltage:		0-500	(centivolt, divide by 100 to get voltage)
-	{14, 	0, 	250},	// Motor poles:		0-250	(number of motor poles)
-	{15, 	0, 	250},	// Motor pulley:	0-250	(number of pulley teeth)
-	{40, 	0, 	250},	// Wheel pulley:	0-250	(number of pulley teeth)
-	{90, 	0, 	1000},	// Wheel diameter:	0-1000	(diameter in millimeter)
-	{1, 	0, 	1},		// Auto turnoff:	0-1		(0: disabled 	| 1: enabled )
-	{2, 	0, 	60}		// Turnoff timer:	0-60	(minutes)
+	{14, 	1, 	250},	// Motor poles:		1-250	(number of motor poles)
+	{15, 	1, 	250},	// Motor pulley:	1-250	(number of pulley teeth)
+	{40, 	1, 	250},	// Wheel pulley:	1-250	(number of pulley teeth)
+	{90, 	1, 	1000},	// Wheel diameter:	1-1000	(diameter in millimeter)
+	{2, 	0, 	60}		// Auto turnoff timer:	0-60	(0: disabled  | 1-60 minutes)
 };
 
 /** ======= Display strings ======= **/
@@ -65,7 +75,6 @@ const char SETTING_TITLES[SETTINGS_COUNT][16] = {
 	"Motor pulley",
 	"Wheel pulley",
 	"Wheel diameter",
-	"Auto turnoff",
 	"Turnoff timer"
 };
 
@@ -102,7 +111,7 @@ const float VOLTAGE_REF = 3.3; // MCU supply power
 /** ======= Hall sensor ======= **/
 
 const uint16_t THROTTLE_CENTER = 512;
-const uint8_t HALL_NOISE_MARGIN = 10;
+const uint8_t HALL_NOISE_MARGIN = 5;
 const uint8_t HALL_MENU_MARGIN = 100;
 
 #define TOP 0

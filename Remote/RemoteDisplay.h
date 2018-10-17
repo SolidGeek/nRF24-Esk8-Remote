@@ -11,23 +11,33 @@ class RemoteDisplay
 
 public:
 
-	RemoteDisplay(void);
+  RemoteDisplay( void );
 
-	void initiate( Remote * _pointer );
+	void init( Remote * _pointer );
 
   void begin( void );
   
 	void update( void );
 
-	void showCharging( int percentage );
+	void showCharging( void );
+
+  void showThrottle( void ); 
+  
+  void showTelemetry( void );
+
+  void showStartup( void );
 
 private:
+  
+  char buf[20];
 
 	/* Reference to the main object */
 	Remote * pointer;
 
-	char buf[20];
+  const uint16_t updateTimer = 250;
+  uint32_t lastUpdate;
 
+	/* Reference to the OLED display */
   U8G2_SSD1306_128X32_UNIVISION_1_HW_I2C * u8g2;
 
 };

@@ -1,14 +1,14 @@
 #ifndef _REMOTE_h
 #define _REMOTE_h
 
-/* Including Arduino.h for making the class compilablie*/
+/* Including Arduino.h for basic functionality and Wire.h for SPI com */
 #include <Arduino.h>
 #include <Wire.h>
+#include <RF24.h>
 
 #include "constants.h"
 #include "RemoteDisplay.h"
 #include "RemoteSettings.h"
-
 
 class Remote
 {
@@ -21,12 +21,12 @@ public:
 		uint64_t payload;	// | Verify		| Value		| Value
 	};
 
-	RemoteDisplay display;
-	// RemoteSettings settings;
+	RemoteDisplay Display;
+	RemoteSettings Settings;
 
 	Remote( void );
 
-  void begin( void );
+	void begin( void );
 
 	bool upperTrigger( void );
 
@@ -36,14 +36,18 @@ public:
 
 	uint8_t batteryPercentage( void );
 
-	void throttlePosition( void );
+  void calculateThrottle( void );
+  
+	uint16_t getThrottle( void );
 
 	bool transmit( uint8_t type, uint16_t value, uint64_t payload );
 
+  const uint16_t startupTimer = 2000;
 
 private:
 
-	uint16_t hallValue;
+	uint16_t hallOutput;
+  uint16_t hallRaw;
 	uint16_t throttle;
 
 	float voltage;

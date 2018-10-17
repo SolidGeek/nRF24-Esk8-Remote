@@ -1,31 +1,55 @@
 #include "Remote.h"
 
-Remote::Remote(void){
-
-  display.initiate(this);
-  // settings.initiate(this);
+Remote::Remote(void)
+{
+  Display.init( this );
 }
 
-void Remote::begin(void){
-  display.begin();
+void Remote::begin(void)
+{
+  Display.begin();
+  Settings.load();
+  
+  pinMode(PIN_USBDETECT, INPUT);
 }
 
-uint8_t Remote::batteryPercentage(void){
-
+uint8_t Remote::batteryPercentage(void)
+{
 	measureVoltage();
 
 	if(voltage >= VOLTAGE_MAX)
 		return 100;
 	else
 		return (uint8_t)( (voltage - VOLTAGE_MIN) / (VOLTAGE_MAX - VOLTAGE_MIN) * 100.0);
-
 }
 
-void Remote::throttlePosition(){
-
+void Remote::calculateThrottle()
+{
   measureHallOutput();
+
+  if ( hallOutput >= Settings.throttleCenter )
+  {
+
+    throttle = constrain( map(hallOutput, Settings.throttleCenter, Settings.throttleMax, THROTTLE_CENTER, 1023), THROTTLE_CENTER, 1023 );
+  } else {
+
+    throttle = constrain( map(hallOutput, Settings.throttleMin, Settings.throttleCenter, 0, THROTTLE_CENTER), 0, THROTTLE_CENTER );
+  }
+
+  // Remove hall center noise
+  if ( abs(throttle - THROTTLE_CENTER) < HALL_NOISE_MARGIN )
+  {
+ 
+    throttle = THROTTLE_CENTER;
+  }
   
-  Serial.println(hallValue);
+}
+
+uint16_t Remote::getThrottle()
+{
+  this->calculateThrottle();
+  
+  return throttle;
 }
 
 void Remote::measureHallOutput(void){
@@ -39,12 +63,10 @@ void Remote::measureHallOutput(void){
   }
   
   uint16_t mean = sum / samples;
-
-  Serial.print(mean);
-  Serial.print(',');
-
+  hallRaw = mean;
+  
   // Smooths the hallValue with a filter
-  hallValue = EMA(mean, hallValue, 0.35);
+  hallOutput = EMA(mean, hallOutput, 0.75); 
 
 }
 
@@ -64,6 +86,15 @@ void Remote::measureVoltage(void){
 
 }
 
+
+bool Remote::usbConnected(){
+
+  if( digitalRead(PIN_USBDETECT) )
+    return true;
+  else
+    return false;
+  
+}
 
 /* Exponential moving weighted average */
 int Remote::EMA( int newSample, int oldSample, float alpha ){
