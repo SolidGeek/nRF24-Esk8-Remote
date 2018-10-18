@@ -6,9 +6,9 @@ RemoteDisplay::RemoteDisplay( void ){}
 void RemoteDisplay::init( Remote * _pointer )
 {
 	pointer = _pointer;
-
+ 
   /* Defining the type of display used (128x32) */
-  u8g2 = new U8G2_SSD1306_128X32_UNIVISION_1_HW_I2C(U8G2_R0, U8X8_PIN_NONE);
+  u8g2 = new U8G2_SSD1306_128X32_UNIVISION_2_HW_I2C(U8G2_R0, U8X8_PIN_NONE);
 }
 
 void RemoteDisplay::begin(){
@@ -21,21 +21,32 @@ void RemoteDisplay::update()
   if( (millis() - lastUpdate) > updateTimer )
   {
     u8g2->firstPage();
+
+    unsigned long start = millis();
     
     do{
 
-      if( millis() < pointer->startupTimer)
+      if( millis() < pointer->startupTimer){
         showStartup();
-      else{
+      }else{
 
-        if( pointer->usbConnected() )
+        if( pointer->usbConnected() ){
           showCharging();
-        else{
+        }else{
           showTelemetry();
+          showThrottle();
+          showConnection();
+          showRemoteBattery();
         }
       }
       
     }while ( u8g2->nextPage() );
+
+    unsigned long end = millis();
+    unsigned long delta = end - start;
+    Serial.print("Time: ");
+    Serial.println(delta);
+    
 
     lastUpdate = millis();
   }
@@ -57,38 +68,100 @@ void RemoteDisplay::showStartup( void )
 void RemoteDisplay::showThrottle( void )
 {
 
-  uint8_t x = 0; uint8_t y = 18;
+  // uint8_t x = 1; uint8_t y = 22;
+
+  uint8_t x = 2; uint8_t y = 0;
   
+  uint16_t throttle = pointer->getThrottle();
   uint8_t width;
-  
-  // Draw throttle
-  u8g2->drawHLine(x, y, 52);
-  u8g2->drawVLine(x, y, 10);
-  u8g2->drawVLine(x + 52, y, 10);
-  u8g2->drawHLine(x, y + 10, 5);
-  u8g2->drawHLine(x + 52 - 4, y + 10, 5);
 
-  if (pointer->getThrottle() >= 512) {
-    width = map(pointer->getThrottle(), 512, 1023, 0, 49);
+  if (throttle > THROTTLE_CENTER) {
 
-    for (uint8_t i = 0; i < width; i++)
-    {
-      u8g2->drawVLine(x + i + 2, y + 2, 7);
-    }
-  } else {
-    width = map(pointer->getThrottle(), 0, 511, 49, 0);
-   
-    for (uint8_t i = 0; i < width; i++)
-    {
-      u8g2->drawVLine(x + 50 - i, y + 2, 7);
-    }
+    width = map(throttle, THROTTLE_CENTER+1, 1023, 0, 80);
+
+    u8g2->drawBox(x, y, width, 2);
+    
+  } else if (throttle < THROTTLE_CENTER){
+
+    width = map(throttle, 0, THROTTLE_CENTER-1, 80, 0);
+    
+    u8g2->drawBox(x + 80 - width, y, width, 2);
+
   }
 
+  /*u8g2->drawRFrame(x, y, 53, 10, 4);
+
+  if (throttle > THROTTLE_CENTER) {
+
+    width = map(throttle, THROTTLE_CENTER+1, 1023, 0, 49);
+
+    if(width > 3){
+      u8g2->drawRBox(x + 2, y + 2, width, 6, 2);
+    }else{
+      // Min width for a Rbox with radius two is 4px
+      u8g2->drawRBox(x + 2, y + 2, 4, 6, 2);  
+    }
+    
+  } else if (throttle < THROTTLE_CENTER){
+
+    width = map(throttle, 0, THROTTLE_CENTER-1, 49, 0);
+
+    if(width > 3){
+      u8g2->drawRBox(x + 51 - width, y + 2, width, 6, 2);
+    }else{
+      // Min width for a Rbox with radius two is 4px
+      u8g2->drawRBox(x + 47, y + 2, 4, 6, 2);  
+    }
+  }*/
+}
+
+void RemoteDisplay::showConnection() {
+
+  uint8_t x = 88; uint8_t y = 2;
+  
+  u8g2->drawXBM(x, y, 12, 12, connection_icon );
+    
 }
 
 void RemoteDisplay::showTelemetry( void )
 {
+
+  uint8_t x = 0; uint8_t y = 31;
   
+  // Battery voltage and distance
+  u8g2->setFont(u8g2_font_profont12_tr);
+  u8g2->drawStr(x + 2, y - 14, "98.4 %");
+  u8g2->drawStr(x + 2, y, "8.3 KM");
+  // Decimals and speed unit
+  u8g2->drawStr(x + 84, y, ".35 KMH" );
+
+  // Speed
+  u8g2->setFont(u8g2_font_logisoso22_tn);
+  u8g2->drawStr(x + 55, y - 1, "34");
+
+ 
+}
+
+void RemoteDisplay::showRemoteBattery() {
+
+  uint8_t x =108; uint8_t y = 3;
+  uint8_t width;
+  
+  uint8_t percentage = pointer->batteryPercentage();
+
+  u8g2->drawRFrame(x + 1, y, 16, 8, 2);
+  u8g2->drawBox(x, y + 2, 1, 4);
+
+  width = map(percentage, 0, 100, 0, 12);
+  u8g2->drawBox(x + 15 - width, y + 2, width, 4);
+  
+  /*for (uint8_t i = 0; i < 5; i++) {
+    uint8_t p = round((100 / 5) * i);
+    if (p <= percentage)
+    {
+      
+    }
+  }*/
 }
 
 void RemoteDisplay::showCharging( void )

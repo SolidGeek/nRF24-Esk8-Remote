@@ -29,7 +29,6 @@ void Remote::calculateThrottle()
 
   if ( hallOutput >= Settings.throttleCenter )
   {
-
     throttle = constrain( map(hallOutput, Settings.throttleCenter, Settings.throttleMax, THROTTLE_CENTER, 1023), THROTTLE_CENTER, 1023 );
   } else {
 
@@ -49,7 +48,7 @@ uint16_t Remote::getThrottle()
 {
   this->calculateThrottle();
   
-  return throttle;
+  return this->throttle;
 }
 
 void Remote::measureHallOutput(void){

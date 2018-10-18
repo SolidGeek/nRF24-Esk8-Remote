@@ -11,9 +11,9 @@ void setup() {
 
 void loop() {
   
-  // Remote.Display.update();
+  Remote.Display.update();
 
-  Serial.println( Remote.getThrottle() );
+  // Serial.println( Remote.getThrottle() );
   
 }
 
