@@ -8,7 +8,6 @@
 
 class RemoteDisplay
 {
-
 public:
 
   RemoteDisplay( void );
@@ -26,6 +25,8 @@ public:
   void showTelemetry( void );
 
   void showStartup( void );
+
+  void showSettings ( void );
 
   void showRemoteBattery( void );
 

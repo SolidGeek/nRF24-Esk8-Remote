@@ -3,12 +3,12 @@
 
 /** ======= Icons ======= **/
 
-const uint8_t charging_icon[] = {
+const uint8_t charging_icon[] PROGMEM = {
   0x00, 0x03, 0x00, 0x00, 0x1F, 0x00, 0x00, 0xFE, 0x00, 0x00, 0xFE, 0x0F, 
   0xFF, 0x07, 0x00, 0xF0, 0x07, 0x00, 0x80, 0x0F, 0x00, 0x00, 0x0C, 0x00, 
 };
 
-const uint8_t firefly_icon[] = {
+const uint8_t firefly_icon[] PROGMEM = {
   0x00, 0x00, 0x04, 0x00, 0x00, 0x04, 0x80, 0x03, 0x06, 0xF0, 0x9F, 0x03, 
   0x7C, 0xFC, 0x77, 0x0E, 0xE0, 0x1C, 0x03, 0xB0, 0x0D, 0x07, 0x30, 0x0F, 
   0x0E, 0x18, 0x06, 0x38, 0x98, 0x07, 0xF0, 0xFF, 0x0D, 0xC0, 0x7F, 0x0C, 
@@ -17,12 +17,12 @@ const uint8_t firefly_icon[] = {
   0x00, 0xC0, 0x06, 0x00, 0xC0, 0x03, 0x00, 0x80, 0x01
 };
 
-const uint8_t connection_icon[] = {
+const uint8_t connection_icon[] PROGMEM = {
   0x18, 0x00, 0x0c, 0x00, 0xc6, 0x00, 0x66, 0x00, 0x23, 0x06, 0x33, 0x0f,
   0x33, 0x0f, 0x23, 0x06, 0x66, 0x00, 0xc6, 0x00, 0x0c, 0x00, 0x18, 0x00
 };
 
-const uint8_t connecting_icon[] = {
+const uint8_t connecting_icon[] PROGMEM = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x00, 0x09,
   0x00, 0x09, 0x00, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
@@ -44,7 +44,7 @@ const short SETTINGS_RULES[SETTINGS_COUNT][3] {
 	{100, 	0, 	1023},	// Throttle min: 	0-1023	(hall output)
 	{512, 	0, 	1023},	// Throttle center: 0-1023  (hall output)
 	{900, 	0, 	1023},	// Throttle max:	0-1023	(hall output)
-	{5, 	0, 	100},	// Deadzone:		0-100	(percentage)
+	{5, 	0, 	100},	// Deadzone:		0-100	(hall value)
 	{0, 	0, 	100},	// Throttle limit:	0-100	(percentage of throttle)
 	{0, 	0, 	100},	// Brake limit:		0-100	(percentage of braking)
 	{10, 	1, 	20},	// Battery cells:	1-20	(number of cells)
@@ -88,27 +88,28 @@ const char SETTING_TITLES[SETTINGS_COUNT][16] = {
 	"Turnoff timer"
 };
 
-const char SETTING_VALUES[3][3][13] = {
-	{"Killswitch", "Cruise", ""},
-	{"Li-ion", "LiPo", ""},
-	{"PPM", "PPM and UART", "UART only"},
+const char SETTING_VALUES[4][3][11] = {
+  {"PPM",       "PPM & UART",   "UART only"},
+  {"Left",      "Right",        ""},
+	{"Disabled",  "Killswitch",   "Cruise"},
+	{"Li-ion",    "Li-Po",        ""},
 };
 
-const char SETTING_UNITS[3][3] = {
-	"S", "T", "mm"
+const char SETTING_UNITS[5][4] = {
+	"S", "T", "mm", "V", "min"
 };
 
 
 /** ======= Pin definations ======= **/
 
-const uint8_t PIN_LBUTTON 	= 4;
-const uint8_t PIN_TBUTTON 	= 5;
-const uint8_t PIN_USBDETECT = 6;
-const uint8_t PIN_SLEEP 	= 7;
-const uint8_t PIN_VOLTAGE  	= A2;
-const uint8_t PIN_HALL 		= A3;
-const uint8_t PIN_CE 		= 9;
-const uint8_t PIN_CS 		= 10;
+const uint8_t PIN_LOWERTRIGGER 	= 4;
+const uint8_t PIN_UPPERTRIGGER	= 5;
+const uint8_t PIN_USBDETECT     = 6;
+const uint8_t PIN_SLEEP 	      = 7;
+const uint8_t PIN_VOLTAGE  	    = A2;
+const uint8_t PIN_HALL 		      = A3;
+const uint8_t PIN_CE 		        = 9;
+const uint8_t PIN_CS 		        = 10;
 
 
 /** ======= Battery monitering ======= **/
@@ -121,7 +122,6 @@ const float VOLTAGE_REF = 3.3; // MCU supply power
 /** ======= Hall sensor ======= **/
 
 const uint16_t THROTTLE_CENTER = 512;
-const uint8_t HALL_NOISE_MARGIN = 5;
 const uint8_t HALL_MENU_MARGIN = 100;
 
 #define TOP 0

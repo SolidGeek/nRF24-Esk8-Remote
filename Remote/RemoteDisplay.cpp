@@ -30,9 +30,16 @@ void RemoteDisplay::update()
         showStartup();
       }else{
 
-        if( pointer->usbConnected() ){
+        if(pointer->changeSettings == true)
+        {
+          // Show settings menu  
+          showSettings();
+        }
+        else if( pointer->usbConnected() )
+        {
           showCharging();
-        }else{
+        }
+        else{
           showTelemetry();
           showThrottle();
           showConnection();
@@ -52,16 +59,41 @@ void RemoteDisplay::update()
   }
 }
 
+void RemoteDisplay::showSettings( void ) {
+
+  uint8_t x = 0; uint8_t y = 10;
+
+  uint8_t settingNumber = pointer->Settings.currentSetting;
+
+  // Draw setting title
+  u8g2->setFont( u8g2_font_profont12_tr );
+  u8g2->drawStr( x, y, SETTING_TITLES[ settingNumber ] );
+
+  int val = pointer->Settings.getValue(settingNumber);
+  sprintf( buf, "%d", val );
+
+  u8g2->setFont( u8g2_font_10x20_tr );
+
+  if ( pointer->Settings.selected == true )
+  {
+    u8g2->drawStr(x + 10, y + 20, buf);
+  }
+  else
+  {
+    u8g2->drawStr(x, y + 20, buf);
+  }  
+}
+
 void RemoteDisplay::showStartup( void )
 {
   uint8_t x = 16; uint8_t y = 2;
   
   // Draw icon
-  u8g2->drawXBM(x, y, 23, 23, firefly_icon);
+  u8g2->drawXBMP( x, y, 23, 23, firefly_icon );
 
   // Draw name
-  u8g2->setFont(u8g2_font_fub14_tr);
-  u8g2->drawStr(x+32,y+18, "Firefly");
+  u8g2->setFont( u8g2_font_fub14_tr );
+  u8g2->drawStr( x+32,y+18, "Firefly" );
   
 }
 
@@ -119,7 +151,7 @@ void RemoteDisplay::showConnection() {
 
   uint8_t x = 88; uint8_t y = 2;
   
-  u8g2->drawXBM(x, y, 12, 12, connection_icon );
+  u8g2->drawXBMP(x, y, 12, 12, connection_icon );
     
 }
 
@@ -181,7 +213,7 @@ void RemoteDisplay::showCharging( void )
 	u8g2->drawStr(x-62,y+18, buf);
 	
 	// Draw lightning
-	u8g2->drawXBM(x+11, y+6, 20, 8, charging_icon);
+	u8g2->drawXBMP(x+11, y+6, 20, 8, charging_icon);
 	
 	// Draw end of battery
 	u8g2->drawRFrame(x+4, y+1, 34, 18, 2);

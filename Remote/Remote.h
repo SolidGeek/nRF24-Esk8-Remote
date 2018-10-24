@@ -12,17 +12,19 @@
 
 class Remote
 {
-
 public: 
-
-	struct package {		// | Normal 	| Setting 	| Acknowledgement
-		uint8_t type;		// | 0 			| 1			| 2
-		uint16_t throttle;	// | Throttle 	| Number    | 0
-		uint64_t payload;	// | Verify		| Value		| Value
-	};
 
 	RemoteDisplay Display;
 	RemoteSettings Settings;
+
+  struct telemetry {
+    float ampHours;
+    float inpVoltage;
+    long rpm;
+    long tachoAbs;
+  } Telemetry;
+
+  const uint16_t startupTimer = 2000;
 
 	Remote( void );
 
@@ -35,16 +37,20 @@ public:
 	bool usbConnected( void );
 
 	uint8_t batteryPercentage( void );
-
-  void calculateThrottle( void );
   
 	uint16_t getThrottle( void );
 
 	bool transmit( uint8_t type, uint16_t value, uint64_t payload );
 
-  const uint16_t startupTimer = 2000;
+  bool changeSettings = false;
 
 private:
+
+  struct package {    // | Normal   | Setting   | Acknowledgement
+    uint8_t type;   // | 0      | 1     | 2
+    uint16_t throttle;  // | Throttle   | Number    | 0
+    uint64_t payload; // | Verify   | Value   | Value
+  } Package;
 
 	uint16_t hallOutput;
   uint16_t hallRaw;
@@ -53,6 +59,11 @@ private:
 	float voltage;
 
 	uint32_t lastTransmission;
+
+  bool readyToTransmit = false;
+  
+
+  void initTransmitter( void );
 
 	void measureVoltage( void );
 

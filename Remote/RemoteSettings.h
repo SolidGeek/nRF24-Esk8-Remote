@@ -55,6 +55,10 @@ public:
   void printSettings( void );
 
 
+  uint8_t currentSetting = 0;
+  bool selected;
+
+
 };
 
 #endif

@@ -11,6 +11,8 @@ void Remote::begin(void)
   Settings.load();
   
   pinMode(PIN_USBDETECT, INPUT);
+  pinMode(PIN_UPPERTRIGGER, INPUT_PULLUP);
+  pinMode(PIN_UPPERTRIGGER, INPUT_PULLUP);
 }
 
 uint8_t Remote::batteryPercentage(void)
@@ -23,10 +25,13 @@ uint8_t Remote::batteryPercentage(void)
 		return (uint8_t)( (voltage - VOLTAGE_MIN) / (VOLTAGE_MAX - VOLTAGE_MIN) * 100.0);
 }
 
-void Remote::calculateThrottle()
+
+uint16_t Remote::getThrottle()
 {
+  // First sample the hall sensor value
   measureHallOutput();
 
+  // Map the hall value to the corresponding settings
   if ( hallOutput >= Settings.throttleCenter )
   {
     throttle = constrain( map(hallOutput, Settings.throttleCenter, Settings.throttleMax, THROTTLE_CENTER, 1023), THROTTLE_CENTER, 1023 );
@@ -36,17 +41,11 @@ void Remote::calculateThrottle()
   }
 
   // Remove hall center noise
-  if ( abs(throttle - THROTTLE_CENTER) < HALL_NOISE_MARGIN )
+  if ( abs(throttle - THROTTLE_CENTER) < Settings.throttleDeadzone )
   {
  
     throttle = THROTTLE_CENTER;
   }
-  
-}
-
-uint16_t Remote::getThrottle()
-{
-  this->calculateThrottle();
   
   return this->throttle;
 }
@@ -86,13 +85,30 @@ void Remote::measureVoltage(void){
 }
 
 
-bool Remote::usbConnected(){
+bool Remote::upperTrigger()
+{
+  if( !digitalRead(PIN_UPPERTRIGGER) )
+    return true;
+  else
+    return false;
+}
 
+
+
+bool Remote::lowerTrigger()
+{
+  if( !digitalRead(PIN_LOWERTRIGGER) )
+    return true;
+  else
+    return false;
+}
+
+bool Remote::usbConnected()
+{
   if( digitalRead(PIN_USBDETECT) )
     return true;
   else
     return false;
-  
 }
 
 /* Exponential moving weighted average */

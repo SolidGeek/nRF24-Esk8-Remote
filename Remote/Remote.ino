@@ -10,6 +10,13 @@ void setup() {
 }
 
 void loop() {
+
+  if( millis() < Remote.startupTimer && Remote.upperTrigger() ) {
+
+    // Enter Settings
+    Remote.changeSettings = true;
+   
+  }
   
   Remote.Display.update();
 
