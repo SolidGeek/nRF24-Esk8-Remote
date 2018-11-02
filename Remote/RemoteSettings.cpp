@@ -5,7 +5,6 @@ RemoteSettings::RemoteSettings( void ){}
 
 void RemoteSettings::load()
 {
-  
   // Load settings from EEPROM to this
   EEPROM.get(0, *this);
 

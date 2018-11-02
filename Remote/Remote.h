@@ -40,8 +40,15 @@ public:
   
 	uint16_t getThrottle( void );
 
+  void calculateThrottle ( void );
+
 	bool transmit( uint8_t type, uint16_t value, uint64_t payload );
 
+  
+
+  /* Variables to be used showing the settings */
+  uint8_t currentSetting = 0;
+  bool selectSetting = false;
   bool changeSettings = false;
 
 private:
@@ -61,7 +68,6 @@ private:
 	uint32_t lastTransmission;
 
   bool readyToTransmit = false;
-  
 
   void initTransmitter( void );
 

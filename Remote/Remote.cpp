@@ -9,6 +9,8 @@ void Remote::begin(void)
 {
   Display.begin();
   Settings.load();
+
+  Settings.printSettings();
   
   pinMode(PIN_USBDETECT, INPUT);
   pinMode(PIN_UPPERTRIGGER, INPUT_PULLUP);
@@ -28,26 +30,29 @@ uint8_t Remote::batteryPercentage(void)
 
 uint16_t Remote::getThrottle()
 {
+  return this->throttle;
+}
+
+void Remote::calculateThrottle( void ){
   // First sample the hall sensor value
-  measureHallOutput();
+  this->measureHallOutput();
 
   // Map the hall value to the corresponding settings
-  if ( hallOutput >= Settings.throttleCenter )
+  if ( this->hallOutput >= Settings.throttleCenter )
   {
-    throttle = constrain( map(hallOutput, Settings.throttleCenter, Settings.throttleMax, THROTTLE_CENTER, 1023), THROTTLE_CENTER, 1023 );
-  } else {
-
-    throttle = constrain( map(hallOutput, Settings.throttleMin, Settings.throttleCenter, 0, THROTTLE_CENTER), 0, THROTTLE_CENTER );
+    this->throttle = constrain( map( this->hallOutput, Settings.throttleCenter, Settings.throttleMax, THROTTLE_CENTER, 1023), THROTTLE_CENTER, 1023 );
+  } 
+  else 
+  {
+    this->throttle = constrain( map( this->hallOutput, Settings.throttleMin, Settings.throttleCenter, 0, THROTTLE_CENTER), 0, THROTTLE_CENTER );
   }
 
   // Remove hall center noise
-  if ( abs(throttle - THROTTLE_CENTER) < Settings.throttleDeadzone )
+  if ( abs(this->throttle - THROTTLE_CENTER) < Settings.throttleDeadzone )
   {
- 
-    throttle = THROTTLE_CENTER;
+    this->throttle = THROTTLE_CENTER;
   }
   
-  return this->throttle;
 }
 
 void Remote::measureHallOutput(void){
@@ -61,11 +66,10 @@ void Remote::measureHallOutput(void){
   }
   
   uint16_t mean = sum / samples;
-  hallRaw = mean;
+  this->hallRaw = mean;
   
   // Smooths the hallValue with a filter
-  hallOutput = EMA(mean, hallOutput, 0.75); 
-
+  this->hallOutput = EMA(mean, hallOutput, 0.75); 
 }
 
 void Remote::measureVoltage(void){
@@ -80,7 +84,7 @@ void Remote::measureVoltage(void){
 	float mean = sum/samples;
 
 	// Multiplying by 2 because of the voltage divider
-	voltage = mean / 1023.0 * VOLTAGE_REF * 2;
+	this->voltage = mean / 1023.0 * VOLTAGE_REF * 2;
 
 }
 

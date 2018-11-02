@@ -42,6 +42,8 @@ private:
   const uint16_t updateTimer = 50; // 20 Hz refresh rate
   uint32_t lastUpdate;
 
+  
+
 	/* Reference to the OLED display */
   U8G2_SSD1306_128X32_UNIVISION_2_HW_I2C * u8g2;
 

@@ -23,8 +23,8 @@ public:
 	uint8_t throttleLimit;
 	uint8_t brakeLimit;
 	uint8_t batteryCells;
-	uint8_t batteryMinVoltage;
-	uint8_t batteryMaxVoltage;
+	uint16_t batteryMinVoltage;
+	uint16_t batteryMaxVoltage;
 	uint8_t motorPoles;
 	uint8_t pulleyMotor;
 	uint8_t pulleyWheel;
@@ -53,11 +53,6 @@ public:
   bool inRange( uint16_t value, uint8_t index );
 
   void printSettings( void );
-
-
-  uint8_t currentSetting = 0;
-  bool selected;
-
 
 };
 

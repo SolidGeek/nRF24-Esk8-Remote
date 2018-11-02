@@ -29,7 +29,7 @@ const uint8_t connecting_icon[] PROGMEM = {
 
 /** ======= Settings ======= **/
 
-const uint16_t SETTINGS_VERSION = 124;
+const uint16_t SETTINGS_VERSION = 1;
 
 const uint8_t SETTINGS_COUNT = 18;
 const uint16_t SETTING_WAIT = 500;
@@ -99,7 +99,6 @@ const char SETTING_UNITS[5][4] = {
 	"S", "T", "mm", "V", "min"
 };
 
-
 /** ======= Pin definations ======= **/
 
 const uint8_t PIN_LOWERTRIGGER 	= 4;
@@ -123,11 +122,6 @@ const float VOLTAGE_REF = 3.3; // MCU supply power
 
 const uint16_t THROTTLE_CENTER = 512;
 const uint8_t HALL_MENU_MARGIN = 100;
-
-#define TOP 0
-#define MIDDLE 1
-#define BOTTOM 2
-
 
 /** ======= NRF24 communication ======= **/
 

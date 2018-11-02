@@ -63,7 +63,7 @@ void RemoteDisplay::showSettings( void ) {
 
   uint8_t x = 0; uint8_t y = 10;
 
-  uint8_t settingNumber = pointer->Settings.currentSetting;
+  uint8_t settingNumber = pointer->currentSetting;
 
   // Draw setting title
   u8g2->setFont( u8g2_font_profont12_tr );
@@ -74,14 +74,14 @@ void RemoteDisplay::showSettings( void ) {
 
   u8g2->setFont( u8g2_font_10x20_tr );
 
-  if ( pointer->Settings.selected == true )
+  if ( pointer->selectSetting == true )
   {
     u8g2->drawStr(x + 10, y + 20, buf);
   }
   else
   {
     u8g2->drawStr(x, y + 20, buf);
-  }  
+  }
 }
 
 void RemoteDisplay::showStartup( void )
