@@ -7,19 +7,76 @@ Remote::Remote(void)
 
 void Remote::begin(void)
 {
+  // Prepare OLED for I2C communication
   Display.begin();
-  Settings.load();
 
-  Settings.printSettings();
+  // Load settings from the EEPROM to the Settings class
+  Settings.load();
   
   pinMode(PIN_USBDETECT, INPUT);
   pinMode(PIN_UPPERTRIGGER, INPUT_PULLUP);
   pinMode(PIN_UPPERTRIGGER, INPUT_PULLUP);
 }
 
+
+void Remote::menuLoop( void ){
+  
+  if( upperTrigger() )
+  {
+    if( triggerFlag == false ){
+  
+      if( currentSetting == SETTINGS_COUNT){
+        // Save settings and exit to main screen
+        Settings.save();
+        changeSettings = false;
+      }
+  
+      selectSetting = !selectSetting;
+      triggerFlag = true;
+    }
+  }else{
+    triggerFlag = false;
+  }
+  
+  uint16_t value = Settings.getValue( currentSetting );
+  
+  if( getThrottle() > THROTTLE_CENTER + 200 ){
+    // Add one to the selected setting or move a setting up  
+    if( settingFlag == false && selectSetting){
+      value++;
+      if( Settings.inRange( value, currentSetting)){
+        Settings.setValue(currentSetting, value);
+        settingFlag = true;  
+      }
+    }
+    else if( settingFlag == false && currentSetting > 0 ){
+      currentSetting--;
+      settingFlag = true;  
+    }
+  }else if( getThrottle() < THROTTLE_CENTER - 200){
+    // Substract one to the selected setting or move a setting down
+    if( settingFlag == false && selectSetting){
+      value--;
+      if( Settings.inRange( value, currentSetting)){
+        Settings.setValue(currentSetting, value);
+        settingFlag = true;  
+      }
+    }
+    else if( settingFlag == false && currentSetting < SETTINGS_COUNT ){
+      currentSetting++;
+      settingFlag = true;  
+    }
+  }else if( getThrottle() >= THROTTLE_CENTER - 50 && getThrottle() <= THROTTLE_CENTER + 50){
+    settingFlag = false;  
+  }
+  
+}
+
 uint8_t Remote::batteryPercentage(void)
 {
 	measureVoltage();
+
+  Serial.println(voltage);
 
 	if(voltage >= VOLTAGE_MAX)
 		return 100;
@@ -68,13 +125,13 @@ void Remote::measureHallOutput(void){
   uint16_t mean = sum / samples;
   this->hallRaw = mean;
   
-  // Smooths the hallValue with a filter
-  this->hallOutput = EMA(mean, hallOutput, 0.75); 
+  // Smooths the hallValue with a simple digital filter
+  this->hallOutput = filter(mean, hallOutput, 0.75); 
 }
 
 void Remote::measureVoltage(void){
 
-	uint32_t sum;
+	uint16_t sum;
   uint8_t samples = 5;
 
 	for (int i = 0; i < samples; ++i){
@@ -116,6 +173,6 @@ bool Remote::usbConnected()
 }
 
 /* Exponential moving weighted average */
-int Remote::EMA( int newSample, int oldSample, float alpha ){
-  return (int)((alpha * (float)newSample) + (1.0-alpha) * (float)oldSample);  
+uint16_t Remote::filter( uint16_t newSample, uint16_t oldSample, float alpha ){
+  return (uint16_t)((alpha * (float)newSample) + (1.0-alpha) * (float)oldSample);  
 }

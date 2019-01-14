@@ -7,7 +7,7 @@ void RemoteDisplay::init( Remote * _pointer )
 {
 	pointer = _pointer;
  
-  /* Defining the type of display used (128x32) */
+  /* Defining the type of display used (128x32) with hardware I2C */
   u8g2 = new U8G2_SSD1306_128X32_UNIVISION_2_HW_I2C(U8G2_R0, U8X8_PIN_NONE);
 }
 
@@ -22,7 +22,7 @@ void RemoteDisplay::update()
   {
     u8g2->firstPage();
 
-    unsigned long start = millis();
+    // unsigned long start = millis();
     
     do{
 
@@ -49,10 +49,10 @@ void RemoteDisplay::update()
       
     }while ( u8g2->nextPage() );
 
-    unsigned long end = millis();
+    /* unsigned long end = millis();
     unsigned long delta = end - start;
     Serial.print("Time: ");
-    Serial.println(delta);
+    Serial.println(delta); */
     
 
     lastUpdate = millis();
@@ -67,20 +67,23 @@ void RemoteDisplay::showSettings( void ) {
 
   // Draw setting title
   u8g2->setFont( u8g2_font_profont12_tr );
-  u8g2->drawStr( x, y, SETTING_TITLES[ settingNumber ] );
 
-  int val = pointer->Settings.getValue(settingNumber);
-  sprintf( buf, "%d", val );
+  if(settingNumber == SETTINGS_COUNT){
+    u8g2->drawStr( x, y+10, "- Save and Quit" );
+  }else{
+    u8g2->drawStr( x, y, SETTING_TITLES[ settingNumber ] );
 
-  u8g2->setFont( u8g2_font_10x20_tr );
+    int val = pointer->Settings.getValue(settingNumber);
+    sprintf( buf, "%d", val );
 
-  if ( pointer->selectSetting == true )
-  {
-    u8g2->drawStr(x + 10, y + 20, buf);
-  }
-  else
-  {
-    u8g2->drawStr(x, y + 20, buf);
+    u8g2->setFont( u8g2_font_10x20_tr );
+  
+    if ( pointer->selectSetting == true ) {
+      u8g2->drawStr(x + 10, y + 20, buf);
+    }
+    else{
+      u8g2->drawStr(x, y + 20, buf);
+    }
   }
 }
 
@@ -120,31 +123,6 @@ void RemoteDisplay::showThrottle( void )
     u8g2->drawBox(x + 80 - width, y, width, 2);
 
   }
-
-  /*u8g2->drawRFrame(x, y, 53, 10, 4);
-
-  if (throttle > THROTTLE_CENTER) {
-
-    width = map(throttle, THROTTLE_CENTER+1, 1023, 0, 49);
-
-    if(width > 3){
-      u8g2->drawRBox(x + 2, y + 2, width, 6, 2);
-    }else{
-      // Min width for a Rbox with radius two is 4px
-      u8g2->drawRBox(x + 2, y + 2, 4, 6, 2);  
-    }
-    
-  } else if (throttle < THROTTLE_CENTER){
-
-    width = map(throttle, 0, THROTTLE_CENTER-1, 49, 0);
-
-    if(width > 3){
-      u8g2->drawRBox(x + 51 - width, y + 2, width, 6, 2);
-    }else{
-      // Min width for a Rbox with radius two is 4px
-      u8g2->drawRBox(x + 47, y + 2, 4, 6, 2);  
-    }
-  }*/
 }
 
 void RemoteDisplay::showConnection() {
@@ -181,6 +159,8 @@ void RemoteDisplay::showRemoteBattery() {
   
   uint8_t percentage = pointer->batteryPercentage();
 
+  
+
   u8g2->drawRFrame(x + 1, y, 16, 8, 2);
   u8g2->drawBox(x, y + 2, 1, 4);
 
@@ -202,6 +182,8 @@ void RemoteDisplay::showCharging( void )
 	uint8_t x = 72; uint8_t y = 6;
 
   int percentage = pointer->batteryPercentage();
+
+  
 
 	// Convert integer to char array and append percentage
 	sprintf(buf, "%d", percentage);

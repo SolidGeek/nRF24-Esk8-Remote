@@ -3,7 +3,7 @@
 
 /* Including Arduino.h for basic functionality and Wire.h for SPI com */
 #include <Arduino.h>
-#include <Wire.h>
+// #include <Wire.h>
 #include <RF24.h>
 
 #include "constants.h"
@@ -30,6 +30,10 @@ public:
 
 	void begin( void );
 
+  void mainLoop( void );
+  
+  void menuLoop( void );
+
 	bool upperTrigger( void );
 
 	bool lowerTrigger( void );
@@ -44,7 +48,6 @@ public:
 
 	bool transmit( uint8_t type, uint16_t value, uint64_t payload );
 
-  
 
   /* Variables to be used showing the settings */
   uint8_t currentSetting = 0;
@@ -63,6 +66,9 @@ private:
   uint16_t hallRaw;
 	uint16_t throttle;
 
+  bool triggerFlag = false;
+  bool settingFlag = false;
+
 	float voltage;
 
 	uint32_t lastTransmission;
@@ -75,7 +81,7 @@ private:
 
 	void measureHallOutput( void );
 
-	int EMA( int newSample, int oldSample, float alpha );
+	uint16_t filter( uint16_t newSample, uint16_t oldSample, float alpha );
 
 };
 
