@@ -24,3 +24,10 @@ Update 2.0 introduces quite a few new interesting features to the remote, and fi
 To-do:
 * UART throttle control
 * Introducing cruise control
+
+## Issues
+
+Randomly won't start, have to reset:
+* Solder a 100uF capacitor in series with a 10K resistor from the reset pin to 3.3v and minus pin of the capacitor to GND. This [delays the setup of the Arduino](https://forum.arduino.cc/index.php?topic=256771.msg3893494#msg3893494), ensuring it doesn’t crash on startup.
+[Like show on this image](https://forum.arduino.cc/index.php?action=dlattach;topic=256771.0;attach=276522;image).
+

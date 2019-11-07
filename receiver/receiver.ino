@@ -424,7 +424,7 @@ void updateSetting( uint8_t setting, uint64_t value)
 	}
 }
 
-void setCruise ( bool cruise = true, uint16_t setPoint = defaultThrottle ){
+void setCruise ( bool cruise = true, uint16_t setPoint = defaultThrottle, uint16_t throttle = defaultThrottle ){
   if( rxSettings.controlMode == 0 ){
 
     setThrottle( setPoint );
@@ -451,7 +451,7 @@ void setCruise ( bool cruise = true, uint16_t setPoint = defaultThrottle ){
  
     } else{
 
-      UART.nunchuck.valueY = 127;
+      UART.nunchuck.valueY = map(throttle, 0, 1023, 0, 255);
       UART.setNunchuckValues();
       
     }
@@ -503,7 +503,7 @@ void speedControl( uint16_t throttle , bool trigger )
         cruising = true;
       }
 
-      setCruise( true, cruiseThrottle );
+      setCruise( true, cruiseThrottle, throttle );
       
     }else{
       cruising = false;
