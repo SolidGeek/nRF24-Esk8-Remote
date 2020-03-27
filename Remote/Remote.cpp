@@ -28,7 +28,7 @@ void Remote::menuLoop( void ){
       if( currentSetting == SETTINGS_COUNT){
         // Save settings and exit to main screen
         Settings.save();
-        changeSettings = false;
+        remoteSettings = false;
       }
   
       selectSetting = !selectSetting;

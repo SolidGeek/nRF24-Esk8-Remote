@@ -67,6 +67,12 @@ const char MENU_TITLES[5][15] = {
 	"Exit"
 };
 
+const uint8_t MENU_CALIBRATE = 0;
+const uint8_t MENU_PAIR      = 1;
+const uint8_t MENU_SETTINGS  = 2;
+const uint8_t MENU_LOAD      = 3;
+const uint8_t MENU_EXIT      = 4;
+
 const char SETTING_TITLES[SETTINGS_COUNT][16] = {
 	"Control mode",
 	"Orientation",
@@ -89,8 +95,8 @@ const char SETTING_TITLES[SETTINGS_COUNT][16] = {
 };
 
 const char SETTING_VALUES[4][3][11] = {
-  {"PPM",       "PPM & UART",   "UART only"},
-  {"Left",      "Right",        ""},
+	{"PPM",       "PPM & UART",   "UART only"},
+	{"Left",      "Right",        ""},
 	{"Disabled",  "Killswitch",   "Cruise"},
 	{"Li-ion",    "Li-Po",        ""},
 };
@@ -104,11 +110,11 @@ const char SETTING_UNITS[5][4] = {
 const uint8_t PIN_LOWERTRIGGER 	= 4;
 const uint8_t PIN_UPPERTRIGGER	= 5;
 const uint8_t PIN_USBDETECT     = 6;
-const uint8_t PIN_SLEEP 	      = 7;
+const uint8_t PIN_SLEEP 	    = 7;
 const uint8_t PIN_VOLTAGE  	    = A2;
-const uint8_t PIN_HALL 		      = A3;
-const uint8_t PIN_CE 		        = 9;
-const uint8_t PIN_CS 		        = 10;
+const uint8_t PIN_HALL 		    = A3;
+const uint8_t PIN_CE 		    = 9;
+const uint8_t PIN_CS 		    = 10;
 
 
 /** ======= Battery monitering ======= **/

@@ -22,7 +22,7 @@ void loop() {
    
   }
 
-  if(Remote.changeSettings){
+  if(Remote.remoteSettings){
 
     // Settings mode
 

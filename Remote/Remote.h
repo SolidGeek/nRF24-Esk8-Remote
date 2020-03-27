@@ -50,9 +50,11 @@ public:
 
 
   /* Variables to be used showing the settings */
+  uint8_t currentMenu = 0;
+  bool remoteMenu = false;
   uint8_t currentSetting = 0;
   bool selectSetting = false;
-  bool changeSettings = false;
+  bool remoteSettings = false;
 
 private:
 
