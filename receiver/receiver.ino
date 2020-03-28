@@ -1,5 +1,5 @@
-#include <SPI.h>
 #include <EEPROM.h>
+#include <SPI.h>
 #include <Servo.h>
 #include "RF24.h"
 #include "VescUart.h"
@@ -7,7 +7,12 @@
 // #define DEBUG
 
 // #define FIREFLYPCB // If receiver is based on the receiver PCB
-#define VERSION 2.0
+
+/* 
+ *  If you want to clear the EEPROM (stored settings), change the version to something else
+ *  Otherwise call setDefaultEEPROMSettings() in setup.
+*/
+#define VERSION 2.1 
 
 #ifdef DEBUG
 	#define DEBUG_PRINT(x)  Serial.println (x)
@@ -55,7 +60,7 @@ const short settingRules[numOfSettings][3] {
 	{0, 0, 1}, // 0: Killswitch | 1: Cruise   
 	{1,	0, 2}, // 0: PPM only   | 1: PPM and UART | 2: UART only
 	{-1, 0, 0}, // No validation for address in this manner 
-  {-1, 0, 0}
+	{-1, 0, 0}
 };
 
 // Define default 8 byte address
@@ -97,9 +102,9 @@ const uint8_t CE = 9;
 const uint8_t CS = 10;
 
 #ifdef FIREFLYPCB
-  const uint8_t statusLedPin = 13;
+	const uint8_t statusLedPin = 13;
 #else
-  const uint8_t statusLedPin = 6;
+	const uint8_t statusLedPin = 6;
 #endif
 
 const uint8_t throttlePin = 5;
@@ -117,39 +122,40 @@ VescUart UART;
 void setup()
 {
 	#ifdef DEBUG
-    UART.setDebugPort(&Serial);
+		UART.setDebugPort(&Serial);
 		Serial.begin(115200);
 		DEBUG_PRINT("** Esk8-remote receiver **");
 		printf_begin();
 	#else
-    #ifndef FIREFLYPCB
-		  // Using RX and TX to get VESC data
-      UART.setSerialPort(&Serial);
-      Serial.begin(115200);
-    #endif
+		#ifndef FIREFLYPCB
+			// Using RX and TX to get VESC data
+			UART.setSerialPort(&Serial);
+			Serial.begin(115200);
+		#endif
 	#endif
 
-  #ifdef FIREFLYPCB
-    // Uses the Atmega32u4 that has a seperate UART port
-    UART.setSerialPort(&Serial1);
-    // Uses lower baud rate, since it runs on 8Mhz (115200 baud is to high).
-    Serial1.begin(19200);
-  #endif
-
+	#ifdef FIREFLYPCB
+		// Uses the Atmega32u4 that has a seperate UART port
+		UART.setSerialPort(&Serial1);
+		// Uses lower baud rate, since it runs on 8Mhz (115200 baud is to high).
+		Serial1.begin(19200);
+	#endif
+  
+	//setDefaultEEPROMSettings();
 	loadEEPROMSettings();
 	initiateReceiver();
 
 	pinMode(statusLedPin, OUTPUT);
 	pinMode(resetAddressPin, INPUT_PULLUP);
 	esc.attach(throttlePin);
-
+  
 	DEBUG_PRINT("Setup complete - begin listening");
 }
 
 void loop()
 { 
-  /* Control Status LED */
-  controlStatusLed();
+	/* Control Status LED */
+	controlStatusLed();
   
 	/* Begin address reset */
 	if (digitalRead(resetAddressPin) == LOW) {
@@ -184,8 +190,8 @@ void loop()
 		// Read and store the received package
 		radio.read( &remPackage, sizeof(remPackage) );
 		DEBUG_PRINT( "New package: '" + String(remPackage.type) + "-" + String(remPackage.throttle) + "-" + String(remPackage.trigger) + "'" );
-    delay(10); 
-    
+		delay(10); 
+		
 		if( remPackage.type <= 2 ){
 			timeoutTimer = millis();
 			recievedData = true;
@@ -204,16 +210,7 @@ void loop()
 			speedControl( remPackage.throttle, remPackage.trigger );
 			
 			if( rxSettings.controlMode != 0 ){
-				#ifdef DEBUG
-				  DEBUG_PRINT("Getting VESC data");
-
-          #ifdef FIREFLYPCB
-            getUartData();
-          #endif
-				#else
-          getUartData();
-        #endif
-        
+				getUartData();       
 			}
 
 			// The next time a transmission is received, the returnData will be sent back in acknowledgement 
@@ -242,57 +239,57 @@ void loop()
 	/* End timeout handling */
 }
 
-void setStatus(uint8_t code){
+void setStatus(uint8_t code)
+{
+	short cycle = 0;
 
-  short cycle = 0;
+	switch(code){
+		case COMPLETE:  cycle = 500;    break;
+		case FAILED:    cycle = 1400;   break;
+	}
 
-  switch(code){
-    case COMPLETE:  cycle = 500;    break;
-    case FAILED:    cycle = 1400;   break;
-  }
+	currentMillis = millis();
 
-  currentMillis = millis();
-
-  if(currentMillis - startCycleMillis >= statusCycleTime){
-    statusCode = code;
-    statusCycleTime = cycle; 
-    startCycleMillis = currentMillis;
-  }
+	if(currentMillis - startCycleMillis >= statusCycleTime){
+		statusCode = code;
+		statusCycleTime = cycle; 
+		startCycleMillis = currentMillis;
+	}
 }
 
-void controlStatusLed(){
+void controlStatusLed()
+{
+	short oninterval, offinterval, cycle;
 
-  short oninterval, offinterval, cycle;
+	switch(statusCode){
+		case TIMEOUT:   oninterval = 300;   offinterval = 300;  break;
+		case COMPLETE:  oninterval = 50;    offinterval = 50;   break;
+		case FAILED:    oninterval = 500;   offinterval = 200;  break;
+	}
 
-  switch(statusCode){
-    case TIMEOUT:   oninterval = 300;   offinterval = 300;  break;
-    case COMPLETE:  oninterval = 50;    offinterval = 50;   break;
-    case FAILED:    oninterval = 500;   offinterval = 200;  break;
-  }
+	currentMillis = millis();
 
-  currentMillis = millis();
+	if (currentMillis - previousStatusMillis >= offinterval && statusLedState == false ) {
 
-  if (currentMillis - previousStatusMillis >= offinterval && statusLedState == false ) {
+		previousStatusMillis = currentMillis;
+		statusLedState = !statusLedState;
 
-    previousStatusMillis = currentMillis;
-    statusLedState = !statusLedState;
-    
-  }else if(currentMillis - previousStatusMillis >= oninterval && statusLedState == true){
+	}else if(currentMillis - previousStatusMillis >= oninterval && statusLedState == true){
 
-    previousStatusMillis = currentMillis;
-    statusLedState = !statusLedState;
-    
-  }
+		previousStatusMillis = currentMillis;
+		statusLedState = !statusLedState;
 
-  if(statusCode == CONNECTED){
-    analogWrite(statusLedPin, map(remPackage.throttle, 0, 1023, 0, 255)); 
-  }else{
-    digitalWrite(statusLedPin, statusLedState);
-  }  
+	}
+
+	if(statusCode == CONNECTED){
+		analogWrite(statusLedPin, map(remPackage.throttle, 0, 1023, 0, 255)); 
+	}else{
+		digitalWrite(statusLedPin, statusLedState);
+	}  
 }
 
-void acquireSetting() {
-  
+void acquireSetting()
+{
 	uint8_t setting;
 	uint64_t value;
 
@@ -346,17 +343,15 @@ void acquireSetting() {
 
 			if( radio.available() ){
 
-  				radio.read( &remPackage, sizeof(remPackage));
-  
-  				DEBUG_PRINT(String(remPackage.type));
-  
-  				if(remPackage.type == CONFIRM){
-  				receivedConfirm = true;
-  				DEBUG_PRINT("Confirmed");
-  			}
-  		}
-  
-  		delay(100);
+				radio.read( &remPackage, sizeof(remPackage));
+
+				if(remPackage.type == CONFIRM){
+				receivedConfirm = true;
+				DEBUG_PRINT("Confirmed");
+			}
+		}
+
+		delay(100);
 		}
 
 		if( receivedConfirm == true){
@@ -388,10 +383,11 @@ void acquireSetting() {
 	}
 }
 
-void initiateReceiver(){
-
+void initiateReceiver()
+{
 	radio.begin();
 	radio.setChannel(defaultChannel);
+	radio.setPALevel(RF24_PA_MAX);
 	radio.enableAckPayload();
 	radio.enableDynamicPayloads();
 	radio.openReadingPipe(1, rxSettings.address);
@@ -401,7 +397,6 @@ void initiateReceiver(){
 		DEBUG_PRINT("Printing receiver details");
 		radio.printDetails();
 	#endif
-
 }
 
 // Update a single setting value
@@ -424,61 +419,48 @@ void updateSetting( uint8_t setting, uint64_t value)
 	}
 }
 
-void setCruise ( bool cruise = true, uint16_t setPoint = defaultThrottle ){
-  if( rxSettings.controlMode == 0 ){
+void setCruise ( bool cruise = true, uint16_t setPoint = defaultThrottle )
+{
+	if( rxSettings.controlMode == 0 ){
+		setThrottle( setPoint );
+	}
+	else if( rxSettings.controlMode == 1 ){
+		setThrottle( setPoint );
+	}
+	else if( rxSettings.controlMode == 2 ){
+		// Setpoint not used (PID by VESC)
+		UART.nunchuck.lowerButton = cruise;
+		esc.detach();
 
-    setThrottle( setPoint );
-    
-  }
-  else if( rxSettings.controlMode == 1 ){
-    
-    setThrottle( setPoint );
-    
-  }
-  else if( rxSettings.controlMode == 2 ){
-
-    // Setpoint not used (PID by VESC)
-    UART.nunchuck.lowerButton = cruise;
-    esc.detach();
-
-    // Make sure the motor doesn't begin to spin wrong way under high load (and don't allow cruise backwards)
-    if( returnData.rpm < 0 ){
-
-      UART.nunchuck.lowerButton = false;
-      UART.nunchuck.valueY = 127;
-      UART.setNunchuckValues();
-      UART.setCurrent(0.0);
- 
-    } else{
-
-      UART.nunchuck.valueY = 127;
-      UART.setNunchuckValues();
-      
-    }
-  }
+		// Make sure the motor doesn't begin to spin wrong way under high load (and don't allow cruise backwards)
+		if( returnData.rpm < 0 ){
+			UART.nunchuck.lowerButton = false;
+			UART.nunchuck.valueY = 127;
+			UART.setNunchuckValues();
+			UART.setCurrent(0.0);
+		} else{
+			UART.nunchuck.valueY = 127;
+			UART.setNunchuckValues();
+		}
+	}
 }
 
 void setThrottle( uint16_t throttle )
 {
-  if( rxSettings.controlMode == 0 ){
-    
-    esc.attach(throttlePin);
-    esc.writeMicroseconds( map(throttle, 0, 1023, 1000, 2000) );  
-  }
-  else if( rxSettings.controlMode == 1 ){
-
-    esc.attach(throttlePin);
-    esc.writeMicroseconds( map(throttle, 0, 1023, 1000, 2000) ); 
-
-  }
-  else if( rxSettings.controlMode == 2 ){
-    
-    UART.nunchuck.valueY = map(throttle, 0, 1023, 0, 255);
-    UART.nunchuck.lowerButton = false;
-    esc.detach();
-    UART.setNunchuckValues();
-
-  }
+	if( rxSettings.controlMode == 0 ){
+		esc.attach(throttlePin);
+		esc.writeMicroseconds( map(throttle, 0, 1023, 1000, 2000) );  
+	}
+	else if( rxSettings.controlMode == 1 ){
+		esc.attach(throttlePin);
+		esc.writeMicroseconds( map(throttle, 0, 1023, 1000, 2000) ); 
+	}
+	else if( rxSettings.controlMode == 2 ){
+		UART.nunchuck.valueY = map(throttle, 0, 1023, 0, 255);
+		UART.nunchuck.lowerButton = false;
+		esc.detach();
+		UART.setNunchuckValues();
+	}
 }
 
 void speedControl( uint16_t throttle , bool trigger )
@@ -489,37 +471,32 @@ void speedControl( uint16_t throttle , bool trigger )
 			setThrottle( throttle );
 		}
 		else{
-			setThrottle( defaultThrottle );
+		  setThrottle( defaultThrottle );
 		}
 	}
 
 	// Cruise control
 	else if( rxSettings.triggerMode == 1 ){ 
-    if( trigger == true ){
-      
-      if( cruising == false ){
-        cruiseThrottle = throttle;
-        cruiseRPM = returnData.rpm;
-        cruising = true;
-      }
-
-      setCruise( true, cruiseThrottle );
-      
-    }else{
-      cruising = false;
-      setThrottle( throttle );
-    }
+		if( trigger == true ){
+			if( cruising == false ){
+				cruiseThrottle = throttle;
+				cruiseRPM = returnData.rpm;
+				cruising = true;
+			}
+			setCruise( true, cruiseThrottle );
+		}else{
+			cruising = false;
+			setThrottle( throttle );
+		}
 	}
 } 
 
 void getUartData()
 {
-
 	if ( millis() - lastUartPull >= uartPullInterval ) {
-
 		lastUartPull = millis();
-
-    DEBUG_PRINT("Getting the DATA");
+	
+		DEBUG_PRINT("Getting VESC data");   
 
 		// Only get what we need
 		if ( UART.getVescValues() )
@@ -533,8 +510,8 @@ void getUartData()
 		{
 			returnData.ampHours 		  = 0.0;
 			returnData.inpVoltage     = 0.0;
-			returnData.rpm 				    = 0;
-			returnData.tachometerAbs  = 0;
+			returnData.rpm 				    = 0.0;
+			returnData.tachometerAbs  = 0.0;
 		}
 	}
 }
@@ -568,15 +545,15 @@ void setDefaultEEPROMSettings()
 		setSettingValue(i, settingRules[i][0]);
 	}
 
-  rxSettings.firmVersion = VERSION;
+	rxSettings.firmVersion = VERSION;
 	rxSettings.address = defaultAddress;
 	updateEEPROMSettings();
 }
 
 void loadEEPROMSettings()
 {
-	bool rewriteSettings = false;
-
+ 	bool rewriteSettings = false;
+  
 	// Load settings from EEPROM to custom struct
 	EEPROM.get(0, rxSettings);
 
@@ -596,14 +573,15 @@ void loadEEPROMSettings()
 		}
 	}
 
-  if(rxSettings.firmVersion != VERSION){
-    
-    setDefaultEEPROMSettings();
-    
-  }
-	else if (rewriteSettings == true)
+	if(rxSettings.firmVersion != VERSION)
+	{
+		setDefaultEEPROMSettings();
+		DEBUG_PRINT("Default settings");
+	}
+	if (rewriteSettings == true)
 	{
 		updateEEPROMSettings();
+		DEBUG_PRINT("Rewrite settings");
 	}
 
 	DEBUG_PRINT("Settings loaded");
@@ -622,8 +600,8 @@ void setSettingValue(int index, uint64_t value)
 		case 0: rxSettings.triggerMode = value; break;
 		case 1: rxSettings.controlMode = value; break;
 		case 2: rxSettings.address = value;     break;
-    
-    default: /* Do nothing */ break;
+		
+	default: /* Do nothing */ break;
 	}
 }
 
@@ -634,8 +612,8 @@ int getSettingValue(uint8_t index)
 	switch (index) {
 		case 0: value = rxSettings.triggerMode; break;
 		case 1: value = rxSettings.controlMode; break;
-    
-    default: /* Do nothing */ break;
+		
+	default: /* Do nothing */ break;
 	}
 	return value;
 }
