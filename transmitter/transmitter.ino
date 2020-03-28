@@ -5,7 +5,7 @@
 #include "RF24.h"
 
 // Uncomment DEBUG if you need to debug the remote
-//#define DEBUG
+#define DEBUG
 
 /* 
  *  If you want to clear the EEPROM (stored settings), change the version to something else
@@ -199,21 +199,40 @@ RF24 radio(CE, CS);
 
 void setup() {
 
+  /* Debugging */
 	#ifdef DEBUG
 		Serial.begin(115200);
     while (!Serial){};
 		printf_begin();
 	#endif
 
-	//setDefaultEEPROMSettings();
-	loadEEPROMSettings();
+	/* Start radio object */
+	radio.begin();
 	
+	/* Start OLED object */
+	u8g2.begin();
+
+	/* Setup of I/O */
 	pinMode(triggerPin, INPUT_PULLUP);
 	pinMode(hallSensorPin, INPUT);
 	pinMode(batteryMeasurePin, INPUT);
 
-	// Start OLED operations
-	u8g2.begin();
+	/* Load settings */
+	//setDefaultEEPROMSettings();
+	loadEEPROMSettings();
+	
+	/* Setup and faultdetecting of nRF24 module */
+	DEBUG_PRINT("Checking nRF24 module");
+ 
+	if(!radio.isChipConnected()){
+		DEBUG_PRINT("- nRF24 not connected corretly");
+	}else{
+		// Start radio communication
+    DEBUG_PRINT("- nRF24 working");
+		initiateTransmitter();
+	}
+
+	/* OLED action on screen on startup */
 	drawStartScreen();
 
 	// Enter settings on startup if trigger is hold down
@@ -221,9 +240,6 @@ void setup() {
 		changeSettings = true;
 		drawTitleScreen("Settings");
 	}
-
-	// Start radio communication
-	initiateTransmitter();
 }
 
 void loop() {
@@ -616,9 +632,8 @@ bool transmitSetting(uint8_t setting, uint64_t value){
 /*
  * Initiate the nRF24 module, needed to reinitiate the nRF24 after address change
  */
-void initiateTransmitter(){
-
-	radio.begin();
+void initiateTransmitter()
+{
 	radio.setChannel(defaultChannel);
 	radio.setPALevel(RF24_PA_MAX);
 	radio.enableAckPayload();

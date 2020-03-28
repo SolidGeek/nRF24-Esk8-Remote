@@ -120,7 +120,8 @@ Servo esc;
 VescUart UART;
 
 void setup()
-{
+{ 
+	/* Debugging */
 	#ifdef DEBUG
 		UART.setDebugPort(&Serial);
 		Serial.begin(115200);
@@ -133,23 +134,37 @@ void setup()
 			Serial.begin(115200);
 		#endif
 	#endif
-
 	#ifdef FIREFLYPCB
 		// Uses the Atmega32u4 that has a seperate UART port
 		UART.setSerialPort(&Serial1);
 		// Uses lower baud rate, since it runs on 8Mhz (115200 baud is to high).
 		Serial1.begin(19200);
 	#endif
-  
-	//setDefaultEEPROMSettings();
-	loadEEPROMSettings();
-	initiateReceiver();
 
+	/* Start radio object */
+	radio.begin();
+
+	/* Setup of I/O */
 	pinMode(statusLedPin, OUTPUT);
 	pinMode(resetAddressPin, INPUT_PULLUP);
 	esc.attach(throttlePin);
+
+	/* Load settings */
+	//setDefaultEEPROMSettings();
+	loadEEPROMSettings();
+
+	/* Setup and faultdetecting of nRF24 module */
+	DEBUG_PRINT("Checking nRF24 module");
+	
+	if(!radio.isChipConnected()){
+		DEBUG_PRINT("- nRF24 not connected corretly");
+	}else{
+		// Start radio communication
+		DEBUG_PRINT("- nRF24 working");
+		initiateReceiver();
+	}
   
-	DEBUG_PRINT("Setup complete - begin listening");
+	DEBUG_PRINT("Receiver setup complete");
 }
 
 void loop()
